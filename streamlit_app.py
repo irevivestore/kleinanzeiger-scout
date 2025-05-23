@@ -19,11 +19,55 @@ demo_data = [
     },
 ]
 
-# Funktion zum Abrufen der Anzeigen (Platzhalter für echten Scraper)
+# Funktion zum Abrufen der Anzeigen mittels Playwright
+import asyncio
+from playwright.async_api import async_playwright
+
 @st.cache_data
 def fetch_anzeigen(modell, preis_min, preis_max):
-    # Später hier Playwright- oder API-Logik einfügen
-    return demo_data
+    # Asynchrone Scraper-Logik
+    async def scrape():
+        results = []
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            # URL anpassen für Modell und Preisfilter
+            base = "https://www.kleinanzeigen.de/s-anzeige/"
+            # Beispiel: Handy-Telekom URL mit parametern
+            url = f"https://www.kleinanzeigen.de/s-handy-telekom/anzeige:angebote/preis:{preis_min}:{preis_max}/{modell.replace(' ', '-').lower()}/k0c173+handy_telekom.device_equipment_s:only_device+handy_telekom.versand_s:ja"
+            await page.goto(url)
+            await page.wait_for_selector("article.aditem")
+            items = await page.query_selector_all("article.aditem")
+            for item in items:
+                titel = (await item.query_selector("a.ellipsis")).inner_text() if await item.query_selector("a.ellipsis") else ""
+                preis_text = (await item.query_selector("p.aditem-main--middle--price-shipping--price")).inner_text() if await item.query_selector("p.aditem-main--middle--price-shipping--price") else "0"
+                preis = int(''.join(filter(str.isdigit, preis_text))) if preis_text else 0
+                link_rel = await item.query_selector("a.ellipsis").get_attribute("href") if await item.query_selector("a.ellipsis") else None
+                link = f"https://www.kleinanzeigen.de{link_rel}" if link_rel else ""
+                thumb_elem = await item.query_selector("img")
+                thumbnail = await thumb_elem.get_attribute("src") if thumb_elem else ""
+                beschr = ""
+                # Detailseite für Beschreibung
+                if link:
+                    detail = await browser.new_page()
+                    await detail.goto(link)
+                    try:
+                        beschr_elem = await detail.query_selector("section#viewad-description, div#ad-description, div#viewad-description, div#viewad-content")
+                        beschr = await beschr_elem.inner_text() if beschr_elem else ""
+                    except:
+                        beschr = ""
+                    await detail.close()
+                results.append({
+                    "titel": titel.strip(),
+                    "beschreibung": beschr.strip(),
+                    "preis": preis,
+                    "link": link,
+                    "thumbnail": thumbnail
+                })
+            await browser.close()
+        return results
+    # Führe den async Scraper synchron aus
+    return asyncio.run(scrape())
 
 # Streamlit App-Konfiguration
 st.set_page_config(page_title="Kleinanzeigen Scout", layout="wide")
