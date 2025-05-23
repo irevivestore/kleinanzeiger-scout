@@ -39,41 +39,38 @@ defekte_kosten = {
 verkaufspreis = 500
 wunsch_marge = 120
 
-# Funktion zum Abrufen der Anzeigen über mobile Seite
+# Funktion zum Abrufen der Anzeigen über Desktop-URL
 @st.cache_data
 def fetch_anzeigen(modell, preis_min, preis_max):
-    mobile_url = (
-        f"https://m.ebay-kleinanzeigen.de/s-handys/{modell.replace(' ', '-').lower()}/k0c216"
-        f"?price={preis_min}-{preis_max}"
+    # Desktop-URL: Modell direkt im Pfad
+    query = modell.replace(' ', '-').lower()
+    url = (
+        f"https://www.kleinanzeigen.de/s-{query}/k0"
+        f"?price={preis_min}-{preis_max}&isSearchRequest=true"
     )
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) "
-            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15A372 Safari/604.1"
-        )
-    }
-    res = requests.get(mobile_url, headers=headers)
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    res = requests.get(url, headers=headers)
     if res.status_code != 200:
         return []
     soup = BeautifulSoup(res.text, 'html.parser')
-    items = soup.find_all('li', class_='ad-listitem')
+    items = soup.find_all('article', class_='aditem')
     results = []
     for item in items:
-        link_tag = item.find('a', {'data-testid': 'ad-click-area'})
-        if not link_tag:
-            continue
-        titel = (link_tag.get('aria-label') or link_tag.text or '').strip()
-        href = link_tag['href']
-        link = 'https://m.ebay-kleinanzeigen.de' + href
+        title_tag = item.find('a', class_='ellipsis')
         price_tag = item.find('p', class_='aditem-main--middle--price-shipping')
-        preis_text = price_tag.text.strip() if price_tag else ''
-        preis_num = int(re.sub(r"[^0-9]", "", preis_text)) if re.search(r"\d", preis_text) else 0
         thumb_tag = item.find('img')
+        if not title_tag or not price_tag:
+            continue
+        titel = title_tag.text.strip()
+        preis_text = price_tag.text.strip()
+        preis_num = int(re.sub(r"[^0-9]", "", preis_text)) if re.search(r"\d", preis_text) else 0
+        link = 'https://www.kleinanzeigen.de' + title_tag['href']
         thumbnail = thumb_tag['src'] if thumb_tag and thumb_tag.has_attr('src') else ''
-        # Beschreibung leer, manuell per Detailseite später
+        # Beschreibung leer, manuell editierbar
+        beschreibung = ''
         results.append({
             'titel': titel,
-            'beschreibung': '',
+            'beschreibung': beschreibung,
             'preis': preis_num,
             'link': link,
             'thumbnail': thumbnail
@@ -102,7 +99,7 @@ else:
     for idx, anzeige in enumerate(st.session_state.anzeigen):
         # Manuelle Defektauswahl
         defekte = st.multiselect(
-            "Defekte auswählen:", list(defekte_kosten.keys()), key=f"defekte_{idx}"
+            "Defekte auswählen:", list(defekte_kosten.keys()), key=f"defekte_{idx}"   
         )
         # Bewertung berechnen
         gesamt_reparatur = sum(defekte_kosten.get(d, 0) for d in defekte)
