@@ -29,12 +29,19 @@ st.title("📱 Kleinanzeigen Analyzer – iPhone-Angebotsbewertung")
 
 # Sidebar für Parameter
 st.sidebar.header("🔧 Einstellungen")
-modell = st.sidebar.selectbox("Wähle Modell", ["iPhone 14 Pro", "iPhone 14", "iPhone 13 Pro", "iPhone 13"] )
-preis_min = st.sidebar.number_input("Min. Preis (€)", min_value=0, max_value=5000, value=100, step=10)
-preis_max = st.sidebar.number_input("Max. Preis (€)", min_value=0, max_value=5000, value=300, step=10)
+modell = st.sidebar.selectbox(
+    "Wähle Modell", ["iPhone 14 Pro", "iPhone 14", "iPhone 13 Pro", "iPhone 13"]
+)
+preis_min = st.sidebar.number_input(
+    "Min. Preis (€)", min_value=0, max_value=5000, value=100, step=10
+)
+preis_max = st.sidebar.number_input(
+    "Max. Preis (€)", min_value=0, max_value=5000, value=300, step=10
+)
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🔧 Reparaturkosten (€)
+st.sidebar.subheader("🔧 Reparaturkosten (€)")
+
 defekte_kosten = {
     "display": 80,
     "akku": 30,
@@ -70,7 +77,8 @@ else:
 
             # Multiselect für Defekte
             defekte = st.multiselect(
-                "Defekte auswählen:", list(defekte_kosten.keys()), key=f"defekte_{idx}")
+                "Defekte auswählen:", list(defekte_kosten.keys()), key=f"defekte_{idx}"
+            )
 
             gesamt_reparatur = sum(defekte_kosten[d] for d in defekte)
             maximaler_einkauf = verkaufspreis - wunsch_marge - gesamt_reparatur
