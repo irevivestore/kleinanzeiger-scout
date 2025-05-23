@@ -26,8 +26,8 @@ def fetch_anzeigen(modell, preis_min, preis_max):
     return demo_data
 
 # Streamlit App-Konfiguration
-st.set_page_config(page_title="Kleinanzeigen Analyzer", layout="wide")
-st.title("📱 Kleinanzeigen Analyzer – iPhone-Angebotsbewertung")
+st.set_page_config(page_title="Kleinanzeigen Scout", layout="wide")
+st.title("📱 Kleinanzeigen Scout – iPhone-Angebotsbewertung")
 
 # Sidebar für Parameter
 st.sidebar.header("🔧 Einstellungen")
@@ -74,32 +74,44 @@ if not st.session_state.anzeigen:
 else:
     for idx, anzeige in enumerate(st.session_state.anzeigen):
         # Bewertung berechnen
-        gesamt_reparatur = sum(defekte_kosten.get(d, 0) for d in st.session_state.get(f"defekte_{idx}", []))
+        defekte = st.session_state.get(f"defekte_{idx}", [])
+        gesamt_reparatur = sum(defekte_kosten.get(d, 0) for d in defekte)
         maximaler_einkauf = verkaufspreis - wunsch_marge - gesamt_reparatur
-        empfehlung = anzeige['preis'] <= maximaler_einkauf
-        # Farbcode
-        bg_color = '#e6ffed' if empfehlung else '#ffe6e6'
-        border_color = '#00b33c' if empfehlung else '#ff3333'
+        preis_angebot = anzeige['preis']
+        diff = (maximaler_einkauf - preis_angebot) / preis_angebot
+        # Farblogik: grün, blau, rot
+        if preis_angebot <= maximaler_einkauf:
+            bg_color = '#e6ffed'  # grün
+            border_color = '#00b33c'
+        elif diff >= -0.1:  # maximaler_einkauf ist bis zu 10% unter Angebotspreis
+            bg_color = '#e6f0ff'  # blau
+            border_color = '#3366ff'
+        else:
+            bg_color = '#ffe6e6'  # rot
+            border_color = '#ff3333'
 
         # Anzeige-Container mit Hintergrundfarbe und Thumbnail
+        thumbnail_url = anzeige.get('thumbnail', 'https://via.placeholder.com/150')
         st.markdown(
             f"<div style='background-color:{bg_color}; padding:15px; margin-bottom:10px; border:2px solid {border_color}; border-radius:10px; display:flex;'>"
-            f"<img src='{anzeige.get('thumbnail', 'https://via.placeholder.com/150')}' style='width:120px; height:auto; margin-right:15px; border-radius:5px;'/>"
+            f"<img src='{thumbnail_url}' style='width:120px; height:auto; margin-right:15px; border-radius:5px;'/>"
             f"<div>"
-            f"<h4>{anzeige['titel']} - {anzeige['preis']} €</h4>"
+            f"<h4>{anzeige['titel']} - {preis_angebot} €</h4>"
             f"<p><a href='{anzeige['link']}' target='_blank'>Zur Anzeige</a></p>"
             f"<p>{anzeige['beschreibung']}</p>"
             f"<p><strong>Max. Einkaufspreis:</strong> {maximaler_einkauf:.2f} €</p>"
-            f"<p><strong>Empfehlung:</strong> {'✅ Kauf möglich' if empfehlung else '❌ Zu teuer'}</p>"
+            f"<p><strong>Empfehlung:</strong>"
+            f" {'✅ Kauf möglich' if preis_angebot <= maximaler_einkauf else ('💬 Verhandeln' if diff >= -0.1 else '❌ Zu teuer')}"
+            f"</p>"
             f"</div></div>", unsafe_allow_html=True
         )
         # Multiselect für Defekte
-        defekte = st.multiselect(
+        st.multiselect(
             "Defekte auswählen:", list(defekte_kosten.keys()), key=f"defekte_{idx}"   
         )
 
         # Nach Auswahl neu berechnen und anzeigen
-        if st.session_state.get(f"defekte_{idx}"):
+        if defekte:
             gesamt_reparatur = sum(defekte_kosten[d] for d in defekte)
             maximaler_einkauf = verkaufspreis - wunsch_marge - gesamt_reparatur
             st.write(f"Aktualisiert - Max. Einkaufspreis: {maximaler_einkauf:.2f} €")
