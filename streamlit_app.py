@@ -71,26 +71,31 @@ if not st.session_state.anzeigen:
     st.info("Klicke in der Seitenleiste auf 'Anzeigen abrufen', um die Angebote zu laden.")
 else:
     for idx, anzeige in enumerate(st.session_state.anzeigen):
-        with st.expander(f"{anzeige['titel']} – {anzeige['preis']} €"):
-            st.markdown(f"**Link:** [{anzeige['link']}]({anzeige['link']})")
-            st.markdown(f"**Beschreibung:** {anzeige['beschreibung']}")
+        # Bewertung berechnen
+        gesamt_reparatur = sum(defekte_kosten.get(d, 0) for d in st.session_state.get(f"defekte_{idx}", []))
+        maximaler_einkauf = verkaufspreis - wunsch_marge - gesamt_reparatur
+        empfehlung = anzeige['preis'] <= maximaler_einkauf
+        # Farbcode
+        bg_color = '#e6ffed' if empfehlung else '#ffe6e6'
+        border_color = '#00b33c' if empfehlung else '#ff3333'
 
-            # Multiselect für Defekte
-            defekte = st.multiselect(
-                "Defekte auswählen:", list(defekte_kosten.keys()), key=f"defekte_{idx}"
-            )
+        # Anzeige-Container mit Hintergrundfarbe
+        st.markdown(
+            f"<div style='background-color:{bg_color}; padding:15px; margin-bottom:10px; border:2px solid {border_color}; border-radius:10px;'>"
+            f"<h4>{anzeige['titel']} - {anzeige['preis']} €</h4>"
+            f"<p><a href='{anzeige['link']}' target='_blank'>Zur Anzeige</a></p>"
+            f"<p>{anzeige['beschreibung']}</p>"
+            f"<p><strong>Max. Einkaufspreis:</strong> {maximaler_einkauf:.2f} €</p>"
+            f"<p><strong>Empfehlung:</strong> {'✅ Kauf möglich' if empfehlung else '❌ Zu teuer'}</p>"
+            f"</div>", unsafe_allow_html=True
+        )
+        # Multiselect für Defekte
+        defekte = st.multiselect(
+            "Defekte auswählen:", list(defekte_kosten.keys()), key=f"defekte_{idx}"   
+        )
 
+        # Nach Auswahl neu berechnen und anzeigen
+        if st.session_state.get(f"defekte_{idx}"):
             gesamt_reparatur = sum(defekte_kosten[d] for d in defekte)
             maximaler_einkauf = verkaufspreis - wunsch_marge - gesamt_reparatur
-
-            farbe = "green" if anzeige['preis'] <= maximaler_einkauf else "red"
-            st.markdown(
-                f"**Reparaturkosten:** {gesamt_reparatur} €  \
-**Max. Einkaufspreis:** <span style='color:{farbe}'>{maximaler_einkauf:.2f} €</span>",
-                unsafe_allow_html=True
-            )
-
-            if anzeige['preis'] <= maximaler_einkauf:
-                st.success("✅ Empfehlung: Kauf möglich")
-            else:
-                st.error("❌ Empfehlung: Zu teuer für deine Zielmarge")
+            st.write(f"Aktualisiert - Max. Einkaufspreis: {maximaler_einkauf:.2f} €")
