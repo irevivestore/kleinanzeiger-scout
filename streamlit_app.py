@@ -86,8 +86,15 @@ def fetch_anzeigen(modell, preis_min, preis_max):
 if 'anzeigen' not in st.session_state:
     st.session_state.anzeigen = []
 
-if st.sidebar.button("🔍 Anzeigen abrufen"):
-    st.session_state.anzeigen = fetch_anzeigen(modell, preis_min, preis_max)
+abfragen = st.sidebar.button("🔍 Anzeigen abrufen")
+if abfragen:
+    with st.spinner("Suche Anzeigen auf Kleinanzeigen..."):
+        st.session_state.anzeigen = fetch_anzeigen(modell, preis_min, preis_max)
+    anzahl = len(st.session_state.anzeigen)
+    if anzahl:
+        st.sidebar.success(f"{anzahl} Anzeigen geladen")
+    else:
+        st.sidebar.warning("Keine Anzeigen gefunden")
 
 # Hauptbereich: Ergebnisse
 st.markdown("## Analyse-Ergebnisse")
