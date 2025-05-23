@@ -84,7 +84,7 @@ else:
         # Anzeige-Container mit Hintergrundfarbe und Thumbnail
         st.markdown(
             f"<div style='background-color:{bg_color}; padding:15px; margin-bottom:10px; border:2px solid {border_color}; border-radius:10px; display:flex;'>"
-            f"<img src='{anzeige['thumbnail']}' style='width:120px; height:auto; margin-right:15px; border-radius:5px;'/>"
+            f"<img src='{anzeige.get('thumbnail', 'https://via.placeholder.com/150')}' style='width:120px; height:auto; margin-right:15px; border-radius:5px;'/>"
             f"<div>"
             f"<h4>{anzeige['titel']} - {anzeige['preis']} €</h4>"
             f"<p><a href='{anzeige['link']}' target='_blank'>Zur Anzeige</a></p>"
