@@ -1,73 +1,8 @@
 import streamlit as st
 import pandas as pd
-
-# Demo-Datenstruktur für Kleinanzeigen-Ergebnisse (wird durch echten Scraper ersetzt)
-demo_data = [
-    {
-        "titel": "iPhone 14 Pro - Display kaputt",
-        "beschreibung": "Das Display ist gesprungen, sonst funktioniert alles.",
-        "preis": 280,
-        "link": "https://www.kleinanzeigen.de/s-anzeige/iphone-14-pro-display-kaputt/1234567890",
-        "thumbnail": "https://via.placeholder.com/150"
-    },
-    {
-        "titel": "iPhone 14 Pro mit Face ID Fehler",
-        "beschreibung": "Face ID funktioniert nicht. Versand möglich.",
-        "preis": 310,
-        "link": "https://www.kleinanzeigen.de/s-anzeige/iphone-14-pro-face-id-defekt/0987654321",
-        "thumbnail": "https://via.placeholder.com/150"
-    },
-]
-
-# Funktion zum Abrufen der Anzeigen mittels Playwright
-import asyncio
-from playwright.async_api import async_playwright
-
-@st.cache_data
-def fetch_anzeigen(modell, preis_min, preis_max):
-    # Asynchrone Scraper-Logik
-    async def scrape():
-        results = []
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            # URL anpassen für Modell und Preisfilter
-            base = "https://www.kleinanzeigen.de/s-anzeige/"
-            # Beispiel: Handy-Telekom URL mit parametern
-            url = f"https://www.kleinanzeigen.de/s-handy-telekom/anzeige:angebote/preis:{preis_min}:{preis_max}/{modell.replace(' ', '-').lower()}/k0c173+handy_telekom.device_equipment_s:only_device+handy_telekom.versand_s:ja"
-            await page.goto(url)
-            await page.wait_for_selector("article.aditem")
-            items = await page.query_selector_all("article.aditem")
-            for item in items:
-                titel = (await item.query_selector("a.ellipsis")).inner_text() if await item.query_selector("a.ellipsis") else ""
-                preis_text = (await item.query_selector("p.aditem-main--middle--price-shipping--price")).inner_text() if await item.query_selector("p.aditem-main--middle--price-shipping--price") else "0"
-                preis = int(''.join(filter(str.isdigit, preis_text))) if preis_text else 0
-                link_rel = await item.query_selector("a.ellipsis").get_attribute("href") if await item.query_selector("a.ellipsis") else None
-                link = f"https://www.kleinanzeigen.de{link_rel}" if link_rel else ""
-                thumb_elem = await item.query_selector("img")
-                thumbnail = await thumb_elem.get_attribute("src") if thumb_elem else ""
-                beschr = ""
-                # Detailseite für Beschreibung
-                if link:
-                    detail = await browser.new_page()
-                    await detail.goto(link)
-                    try:
-                        beschr_elem = await detail.query_selector("section#viewad-description, div#ad-description, div#viewad-description, div#viewad-content")
-                        beschr = await beschr_elem.inner_text() if beschr_elem else ""
-                    except:
-                        beschr = ""
-                    await detail.close()
-                results.append({
-                    "titel": titel.strip(),
-                    "beschreibung": beschr.strip(),
-                    "preis": preis,
-                    "link": link,
-                    "thumbnail": thumbnail
-                })
-            await browser.close()
-        return results
-    # Führe den async Scraper synchron aus
-    return asyncio.run(scrape())
+import requests
+from bs4 import BeautifulSoup
+import re
 
 # Streamlit App-Konfiguration
 st.set_page_config(page_title="Kleinanzeigen Scout", layout="wide")
@@ -104,6 +39,49 @@ defekte_kosten = {
 verkaufspreis = 500
 wunsch_marge = 120
 
+# Funktion zum Abrufen der Anzeigen mit Requests & BeautifulSoup
+@st.cache_data
+def fetch_anzeigen(modell, preis_min, preis_max):
+    url = (
+        f"https://www.ebay-kleinanzeigen.de/s-handys/{modell.replace(' ', '-').lower()}/k0c216"
+        f"?price={preis_min}-{preis_max}&isSearchRequest=true"
+    )
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+    res = requests.get(url, headers=headers)
+    if res.status_code != 200:
+        return []
+    soup = BeautifulSoup(res.text, 'html.parser')
+    items = soup.find_all('article', class_='aditem')
+    results = []
+    for item in items:
+        title_tag = item.find('a', class_='ellipsis')
+        price_tag = item.find('p', class_='aditem-main--middle--price-shipping')
+        thumb_tag = item.find('img')
+        if not title_tag or not price_tag:
+            continue
+        titel = title_tag.text.strip()
+        preis_text = price_tag.text.strip()
+        preis_num = int(re.sub(r"[^0-9]", "", preis_text)) if re.search(r"\d", preis_text) else 0
+        link = 'https://www.ebay-kleinanzeigen.de' + title_tag['href']
+        thumbnail = thumb_tag['src'] if thumb_tag and thumb_tag.has_attr('src') else ''
+        # Detailseite für Beschreibung
+        beschreibung = ''
+        detail_res = requests.get(link, headers=headers)
+        if detail_res.status_code == 200:
+            detail_soup = BeautifulSoup(detail_res.text, 'html.parser')
+            desc = detail_soup.find('section', id='viewad-description') or detail_soup.find('div', id='viewad-description')
+            beschreibung = desc.text.strip() if desc else ''
+        results.append({
+            'titel': titel,
+            'beschreibung': beschreibung,
+            'preis': preis_num,
+            'link': link,
+            'thumbnail': thumbnail
+        })
+    return results
+
 # Button zum Abrufen der Anzeigen
 if 'anzeigen' not in st.session_state:
     st.session_state.anzeigen = []
@@ -122,31 +100,29 @@ else:
         gesamt_reparatur = sum(defekte_kosten.get(d, 0) for d in defekte)
         maximaler_einkauf = verkaufspreis - wunsch_marge - gesamt_reparatur
         preis_angebot = anzeige['preis']
-        diff = (maximaler_einkauf - preis_angebot) / preis_angebot
+        diff = (maximaler_einkauf - preis_angebot) / preis_angebot if preis_angebot else 0
         # Farblogik: grün, blau, rot
         if preis_angebot <= maximaler_einkauf:
-            bg_color = '#e6ffed'  # grün
-            border_color = '#00b33c'
-        elif diff >= -0.1:  # maximaler_einkauf ist bis zu 10% unter Angebotspreis
-            bg_color = '#e6f0ff'  # blau
-            border_color = '#3366ff'
+            bg_color, border_color = '#e6ffed', '#00b33c'
+            recommendation = '✅ Kauf möglich'
+        elif diff >= -0.1:
+            bg_color, border_color = '#e6f0ff', '#3366ff'
+            recommendation = '💬 Verhandeln'
         else:
-            bg_color = '#ffe6e6'  # rot
-            border_color = '#ff3333'
+            bg_color, border_color = '#ffe6e6', '#ff3333'
+            recommendation = '❌ Zu teuer'
 
-        # Anzeige-Container mit Hintergrundfarbe und Thumbnail
+        # Anzeige-Container
         thumbnail_url = anzeige.get('thumbnail', 'https://via.placeholder.com/150')
         st.markdown(
             f"<div style='background-color:{bg_color}; padding:15px; margin-bottom:10px; border:2px solid {border_color}; border-radius:10px; display:flex;'>"
-            f"<img src='{thumbnail_url}' style='width:120px; height:auto; margin-right:15px; border-radius:5px;'/>"
+            f"<img src='{thumbnail_url}' style='width:120px; margin-right:15px; border-radius:5px;'/>"
             f"<div>"
             f"<h4>{anzeige['titel']} - {preis_angebot} €</h4>"
             f"<p><a href='{anzeige['link']}' target='_blank'>Zur Anzeige</a></p>"
             f"<p>{anzeige['beschreibung']}</p>"
             f"<p><strong>Max. Einkaufspreis:</strong> {maximaler_einkauf:.2f} €</p>"
-            f"<p><strong>Empfehlung:</strong>"
-            f" {'✅ Kauf möglich' if preis_angebot <= maximaler_einkauf else ('💬 Verhandeln' if diff >= -0.1 else '❌ Zu teuer')}"
-            f"</p>"
+            f"<p><strong>Empfehlung:</strong> {recommendation}</p>"
             f"</div></div>", unsafe_allow_html=True
         )
         # Multiselect für Defekte
