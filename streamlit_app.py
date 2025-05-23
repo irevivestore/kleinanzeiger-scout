@@ -7,13 +7,15 @@ demo_data = [
         "titel": "iPhone 14 Pro - Display kaputt",
         "beschreibung": "Das Display ist gesprungen, sonst funktioniert alles.",
         "preis": 280,
-        "link": "https://www.kleinanzeigen.de/s-anzeige/iphone-14-pro-display-kaputt/1234567890"
+        "link": "https://www.kleinanzeigen.de/s-anzeige/iphone-14-pro-display-kaputt/1234567890",
+        "thumbnail": "https://via.placeholder.com/150"
     },
     {
         "titel": "iPhone 14 Pro mit Face ID Fehler",
         "beschreibung": "Face ID funktioniert nicht. Versand möglich.",
         "preis": 310,
-        "link": "https://www.kleinanzeigen.de/s-anzeige/iphone-14-pro-face-id-defekt/0987654321"
+        "link": "https://www.kleinanzeigen.de/s-anzeige/iphone-14-pro-face-id-defekt/0987654321",
+        "thumbnail": "https://via.placeholder.com/150"
     },
 ]
 
@@ -79,15 +81,17 @@ else:
         bg_color = '#e6ffed' if empfehlung else '#ffe6e6'
         border_color = '#00b33c' if empfehlung else '#ff3333'
 
-        # Anzeige-Container mit Hintergrundfarbe
+        # Anzeige-Container mit Hintergrundfarbe und Thumbnail
         st.markdown(
-            f"<div style='background-color:{bg_color}; padding:15px; margin-bottom:10px; border:2px solid {border_color}; border-radius:10px;'>"
+            f"<div style='background-color:{bg_color}; padding:15px; margin-bottom:10px; border:2px solid {border_color}; border-radius:10px; display:flex;'>"
+            f"<img src='{anzeige['thumbnail']}' style='width:120px; height:auto; margin-right:15px; border-radius:5px;'/>"
+            f"<div>"
             f"<h4>{anzeige['titel']} - {anzeige['preis']} €</h4>"
             f"<p><a href='{anzeige['link']}' target='_blank'>Zur Anzeige</a></p>"
             f"<p>{anzeige['beschreibung']}</p>"
             f"<p><strong>Max. Einkaufspreis:</strong> {maximaler_einkauf:.2f} €</p>"
             f"<p><strong>Empfehlung:</strong> {'✅ Kauf möglich' if empfehlung else '❌ Zu teuer'}</p>"
-            f"</div>", unsafe_allow_html=True
+            f"</div></div>", unsafe_allow_html=True
         )
         # Multiselect für Defekte
         defekte = st.multiselect(
