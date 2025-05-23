@@ -39,43 +39,41 @@ defekte_kosten = {
 verkaufspreis = 500
 wunsch_marge = 120
 
-# Funktion zum Abrufen der Anzeigen mit Requests & BeautifulSoup
+# Funktion zum Abrufen der Anzeigen über mobile Seite
 @st.cache_data
 def fetch_anzeigen(modell, preis_min, preis_max):
-    url = (
-        f"https://www.ebay-kleinanzeigen.de/s-handys/{modell.replace(' ', '-').lower()}/k0c216"
-        f"?price={preis_min}-{preis_max}&isSearchRequest=true"
+    mobile_url = (
+        f"https://m.ebay-kleinanzeigen.de/s-handys/{modell.replace(' ', '-').lower()}/k0c216"
+        f"?price={preis_min}-{preis_max}"
     )
     headers = {
-        "User-Agent": "Mozilla/5.0"
+        "User-Agent": (
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15A372 Safari/604.1"
+        )
     }
-    res = requests.get(url, headers=headers)
+    res = requests.get(mobile_url, headers=headers)
     if res.status_code != 200:
         return []
     soup = BeautifulSoup(res.text, 'html.parser')
-    items = soup.find_all('article', class_='aditem')
+    items = soup.find_all('li', class_='ad-listitem')
     results = []
     for item in items:
-        title_tag = item.find('a', class_='ellipsis')
-        price_tag = item.find('p', class_='aditem-main--middle--price-shipping')
-        thumb_tag = item.find('img')
-        if not title_tag or not price_tag:
+        link_tag = item.find('a', {'data-testid': 'ad-click-area'})
+        if not link_tag:
             continue
-        titel = title_tag.text.strip()
-        preis_text = price_tag.text.strip()
+        titel = (link_tag.get('aria-label') or link_tag.text or '').strip()
+        href = link_tag['href']
+        link = 'https://m.ebay-kleinanzeigen.de' + href
+        price_tag = item.find('p', class_='aditem-main--middle--price-shipping')
+        preis_text = price_tag.text.strip() if price_tag else ''
         preis_num = int(re.sub(r"[^0-9]", "", preis_text)) if re.search(r"\d", preis_text) else 0
-        link = 'https://www.ebay-kleinanzeigen.de' + title_tag['href']
+        thumb_tag = item.find('img')
         thumbnail = thumb_tag['src'] if thumb_tag and thumb_tag.has_attr('src') else ''
-        # Detailseite für Beschreibung
-        beschreibung = ''
-        detail_res = requests.get(link, headers=headers)
-        if detail_res.status_code == 200:
-            detail_soup = BeautifulSoup(detail_res.text, 'html.parser')
-            desc = detail_soup.find('section', id='viewad-description') or detail_soup.find('div', id='viewad-description')
-            beschreibung = desc.text.strip() if desc else ''
+        # Beschreibung leer, manuell per Detailseite später
         results.append({
             'titel': titel,
-            'beschreibung': beschreibung,
+            'beschreibung': '',
             'preis': preis_num,
             'link': link,
             'thumbnail': thumbnail
@@ -102,8 +100,11 @@ if not st.session_state.anzeigen:
     st.info("Klicke in der Seitenleiste auf 'Anzeigen abrufen', um die Angebote zu laden.")
 else:
     for idx, anzeige in enumerate(st.session_state.anzeigen):
+        # Manuelle Defektauswahl
+        defekte = st.multiselect(
+            "Defekte auswählen:", list(defekte_kosten.keys()), key=f"defekte_{idx}"
+        )
         # Bewertung berechnen
-        defekte = st.session_state.get(f"defekte_{idx}", [])
         gesamt_reparatur = sum(defekte_kosten.get(d, 0) for d in defekte)
         maximaler_einkauf = verkaufspreis - wunsch_marge - gesamt_reparatur
         preis_angebot = anzeige['preis']
@@ -118,7 +119,6 @@ else:
         else:
             bg_color, border_color = '#ffe6e6', '#ff3333'
             recommendation = '❌ Zu teuer'
-
         # Anzeige-Container
         thumbnail_url = anzeige.get('thumbnail', 'https://via.placeholder.com/150')
         st.markdown(
@@ -127,18 +127,8 @@ else:
             f"<div>"
             f"<h4>{anzeige['titel']} - {preis_angebot} €</h4>"
             f"<p><a href='{anzeige['link']}' target='_blank'>Zur Anzeige</a></p>"
-            f"<p>{anzeige['beschreibung']}</p>"
+            f"<p>{anzeige.get('beschreibung', '')}</p>"
             f"<p><strong>Max. Einkaufspreis:</strong> {maximaler_einkauf:.2f} €</p>"
             f"<p><strong>Empfehlung:</strong> {recommendation}</p>"
             f"</div></div>", unsafe_allow_html=True
         )
-        # Multiselect für Defekte
-        st.multiselect(
-            "Defekte auswählen:", list(defekte_kosten.keys()), key=f"defekte_{idx}"   
-        )
-
-        # Nach Auswahl neu berechnen und anzeigen
-        if defekte:
-            gesamt_reparatur = sum(defekte_kosten[d] for d in defekte)
-            maximaler_einkauf = verkaufspreis - wunsch_marge - gesamt_reparatur
-            st.write(f"Aktualisiert - Max. Einkaufspreis: {maximaler_einkauf:.2f} €")
