@@ -1,47 +1,7 @@
-
-import streamlit as st
-
-# Titel der App
-st.title("📱 iPhone Kleinanzeigen Analyzer")
-
-# Seitenleiste für Einstellungen
-st.sidebar.header("🔧 Einstellungen")
-
-# Modellauswahl
-modell = st.sidebar.selectbox(
-    "Wähle ein iPhone Modell:",
-    ["iPhone 14 Pro", "iPhone 14", "iPhone 13 Pro", "iPhone 13"]
-)
-
-# Preisparameter
-verkaufspreis = st.sidebar.number_input("Verkaufspreis (€)", min_value=100, max_value=2000, value=500, step=10)
-wunsch_marge = st.sidebar.number_input("Gewünschte Marge (€)", min_value=0, max_value=1000, value=120, step=10)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Reparaturkosten (€)")
-
-# Reparaturkosten für typische Defekte
-reparaturkosten = {
-    "display": st.sidebar.number_input("Display", 0, 500, 80, 10),
-    "akku": st.sidebar.number_input("Akku", 0, 200, 30, 5),
-    "backcover": st.sidebar.number_input("Backcover", 0, 300, 60, 10),
-    "kamera": st.sidebar.number_input("Kamera", 0, 300, 100, 10),
-    "lautsprecher": st.sidebar.number_input("Lautsprecher", 0, 200, 60, 10),
-    "mikrofon": st.sidebar.number_input("Mikrofon", 0, 200, 50, 10),
-    "face id": st.sidebar.number_input("Face ID", 0, 300, 80, 10),
-    "wasserschaden": st.sidebar.number_input("Wasserschaden", 0, 500, 250, 10),
-    "kein bild": st.sidebar.number_input("Kein Bild", 0, 300, 80, 10),
-}
-
-st.markdown("### 🔍 Analyse-Ergebnisse")
-st.info("Bitte beachte: Die eigentliche Anzeigeanalyse und Websuche sind aktuell deaktiviert – KI-Funktionalität folgt!")
-
-# Platzhalter für spätere Anzeigenergebnisse
-st.write("Hier erscheinen später die analysierten Angebote mit Bewertung und Kaufempfehlung.")
 import streamlit as st
 import pandas as pd
 
-# Beispiel-Datenstruktur für Kleinanzeigen-Ergebnisse
+# Demo-Datenstruktur für Kleinanzeigen-Ergebnisse (wird durch echten Scraper ersetzt)
 demo_data = [
     {
         "titel": "iPhone 14 Pro - Display kaputt",
@@ -57,6 +17,24 @@ demo_data = [
     },
 ]
 
+# Funktion zum Abrufen der Anzeigen (Platzhalter für echten Scraper)
+@st.cache_data
+def fetch_anzeigen(modell, preis_min, preis_max):
+    # Später hier Playwright- oder API-Logik einfügen
+    return demo_data
+
+# Streamlit App-Konfiguration
+st.set_page_config(page_title="Kleinanzeigen Analyzer", layout="wide")
+st.title("📱 Kleinanzeigen Analyzer – iPhone-Angebotsbewertung")
+
+# Sidebar für Parameter
+st.sidebar.header("🔧 Einstellungen")
+modell = st.sidebar.selectbox("Wähle Modell", ["iPhone 14 Pro", "iPhone 14", "iPhone 13 Pro", "iPhone 13"] )
+preis_min = st.sidebar.number_input("Min. Preis (€)", min_value=0, max_value=5000, value=100, step=10)
+preis_max = st.sidebar.number_input("Max. Preis (€)", min_value=0, max_value=5000, value=300, step=10)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔧 Reparaturkosten (€)
 defekte_kosten = {
     "display": 80,
     "akku": 30,
@@ -73,37 +51,38 @@ defekte_kosten = {
 verkaufspreis = 500
 wunsch_marge = 120
 
-st.set_page_config(page_title="Kleinanzeigen Analyzer", layout="wide")
-st.title("📱 Kleinanzeigen Analyzer – iPhone-Angebotsbewertung")
+# Button zum Abrufen der Anzeigen
+if 'anzeigen' not in st.session_state:
+    st.session_state.anzeigen = []
 
-if "anzeigen" not in st.session_state:
-    st.session_state.anzeigen = demo_data
+if st.sidebar.button("🔍 Anzeigen abrufen"):
+    st.session_state.anzeigen = fetch_anzeigen(modell, preis_min, preis_max)
 
-st.markdown("Wähle für jede Anzeige aus, welche Defekte vorhanden sind. Die Bewertung wird automatisch neu berechnet.")
+# Hauptbereich: Ergebnisse
+st.markdown("## Analyse-Ergebnisse")
+if not st.session_state.anzeigen:
+    st.info("Klicke in der Seitenleiste auf 'Anzeigen abrufen', um die Angebote zu laden.")
+else:
+    for idx, anzeige in enumerate(st.session_state.anzeigen):
+        with st.expander(f"{anzeige['titel']} – {anzeige['preis']} €"):
+            st.markdown(f"**Link:** [{anzeige['link']}]({anzeige['link']})")
+            st.markdown(f"**Beschreibung:** {anzeige['beschreibung']}")
 
-for idx, anzeige in enumerate(st.session_state.anzeigen):
-    with st.expander(f"{anzeige['titel']} – {anzeige['preis']} €"):
-        st.markdown(f"**Link:** [Anzeigenlink]({anzeige['link']})")
-        st.markdown(f"**Beschreibung:** {anzeige['beschreibung']}")
+            # Multiselect für Defekte
+            defekte = st.multiselect(
+                "Defekte auswählen:", list(defekte_kosten.keys()), key=f"defekte_{idx}")
 
-        defektauswahl = st.multiselect(
-            f"Defekte für Anzeige {idx + 1} auswählen:",
-            options=list(defekte_kosten.keys()),
-            key=f"defekte_{idx}"
-        )
+            gesamt_reparatur = sum(defekte_kosten[d] for d in defekte)
+            maximaler_einkauf = verkaufspreis - wunsch_marge - gesamt_reparatur
 
-        gesamt_reparatur = sum(defekte_kosten[d] for d in defektauswahl)
-        maximaler_einkaufspreis = verkaufspreis - wunsch_marge - gesamt_reparatur
+            farbe = "green" if anzeige['preis'] <= maximaler_einkauf else "red"
+            st.markdown(
+                f"**Reparaturkosten:** {gesamt_reparatur} €  \
+**Max. Einkaufspreis:** <span style='color:{farbe}'>{maximaler_einkauf:.2f} €</span>",
+                unsafe_allow_html=True
+            )
 
-        farbe = "green" if anzeige['preis'] <= maximaler_einkaufspreis else "red"
-
-        st.markdown(
-            f"**Reparaturkosten:** {gesamt_reparatur} €  <br>"
-            f"**Max. Einkaufspreis:** <span style='color:{farbe}'>{maximaler_einkaufspreis:.2f} €</span>",
-            unsafe_allow_html=True
-        )
-
-        if anzeige['preis'] <= maximaler_einkaufspreis:
-            st.success("Diese Anzeige erfüllt deine Preis-/Margenvorgaben.")
-        else:
-            st.warning("Preis zu hoch für gewünschte Marge.")
+            if anzeige['preis'] <= maximaler_einkauf:
+                st.success("✅ Empfehlung: Kauf möglich")
+            else:
+                st.error("❌ Empfehlung: Zu teuer für deine Zielmarge")
