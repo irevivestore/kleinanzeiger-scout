@@ -1,86 +1,79 @@
+# Kleinanzeigen Scout – ScraperAPI-Variante mit Streamlit
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 
-st.set_page_config(page_title="📦 Kleinanzeigen Scout", layout="wide")
-st.title("📦 Kleinanzeigen Scout")
+# Deine ScraperAPI Zugangsdaten
+SCRAPERAPI_KEY = "0930d1cea7ce7a64dc09e44c9bf722b6"
 
-# Seitenleiste mit Filteroptionen
-st.sidebar.header("🔍 Filter")
-modell = st.sidebar.text_input("iPhone Modell", "iPhone 14 Pro")
+# Caching der Ergebnisse
+@st.cache_data(show_spinner=False)
+def fetch_ads(modell):
+    keyword = modell.replace(" ", "-").lower()
+    url = f"https://www.kleinanzeigen.de/s-{keyword}/k0"
+    scraper_url = f"http://api.scraperapi.com?api_key={SCRAPERAPI_KEY}&url={url}"
 
-st.sidebar.subheader("💰 Preisfilter (€)")
-preis_min = st.sidebar.number_input("Mindestpreis", value=100, step=10)
-preis_max = st.sidebar.number_input("Maximalpreis", value=1400, step=10)
+    try:
+        res = requests.get(scraper_url, timeout=20)
+        if res.status_code != 200:
+            return []
+        soup = BeautifulSoup(res.content, "html.parser")
+        results = []
 
-st.sidebar.markdown("---")
+        for card in soup.select("article.aditem"):
+            title_tag = card.select_one(".text-module-begin h2")
+            title = title_tag.get_text(strip=True) if title_tag else ""
 
-# Button zum Abrufen
-if st.sidebar.button("🔄 Anzeigen abrufen"):
-    with st.spinner("Lade Anzeigen..."):
-        try:
-            keyword = modell.replace(" ", "-").lower()
-            url = f"https://www.kleinanzeigen.de/s-{keyword}/k0"
+            price_tag = card.select_one(".aditem-main--middle .aditem-main--price")
+            price_text = price_tag.get_text(strip=True) if price_tag else "0 €"
+            price = int(price_text.replace("€", "").replace(".", "").strip() or 0)
 
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
-            }
-            response = requests.get(url, headers=headers)
+            link_tag = card.select_one("a")
+            link = "https://www.kleinanzeigen.de" + link_tag["href"] if link_tag else ""
 
-            if response.status_code != 200:
-                st.error(f"❌ Fehler beim Abrufen der Seite: Statuscode {response.status_code}")
-            else:
-                soup = BeautifulSoup(response.text, "html.parser")
-                items = soup.select(".aditem")
+            thumb_tag = card.select_one("img")
+            thumbnail = thumb_tag["src"] if thumb_tag and "src" in thumb_tag.attrs else ""
 
-                anzeigen = []
-                for item in items:
-                    title_tag = item.select_one(".aditem-main--middle--title")
-                    price_tag = item.select_one(".aditem-main--middle--price-shipping--price")
-                    href_tag = item.select_one("a")
-                    image_tag = item.select_one("img")
+            results.append({
+                "title": title,
+                "price": price,
+                "link": link,
+                "thumbnail": thumbnail
+            })
+        return results
+    except Exception as e:
+        st.error(f"Fehler beim Abrufen: {e}")
+        return []
 
-                    if not title_tag or not price_tag:
-                        continue
 
-                    title = title_tag.get_text(strip=True)
-                    price_str = price_tag.get_text(strip=True).replace("€", "").replace(".", "").replace(",", ".")
+# Streamlit App Interface
+st.set_page_config(page_title="Kleinanzeigen Scout", layout="wide")
+st.title("🔎 Kleinanzeigen Scout")
 
-                    try:
-                        price = float(price_str)
-                    except:
-                        continue
+modell = st.text_input("🔍 iPhone-Modell", value="iPhone 14 Pro")
+start_search = st.button("Anzeigen abrufen")
 
-                    if preis_min <= price <= preis_max:
-                        anzeigen.append({
-                            "Titel": title,
-                            "Preis": price,
-                            "Link": "https://www.kleinanzeigen.de" + href_tag['href'] if href_tag else "",
-                            "Thumbnail": image_tag['src'] if image_tag and 'src' in image_tag.attrs else ""
-                        })
+if start_search:
+    with st.spinner("Suche läuft..."):
+        anzeigen = fetch_ads(modell)
 
-                if not anzeigen:
-                    st.warning("⚠️ Keine passenden Anzeigen gefunden.")
-                else:
-                    st.success(f"✅ {len(anzeigen)} Anzeige(n) gefunden.")
-                    for anzeige in anzeigen:
-                        farbe = "#e0f7e9"  # Grün als Standard
-                        with st.container():
-                            st.markdown(
-                                f"""
-                                <div style='background-color:{farbe}; padding:10px; border-radius:10px; margin-bottom:10px; display:flex; align-items:center;'>
-                                    <img src='{anzeige["Thumbnail"]}' style='width:100px; height:auto; margin-right:15px; border-radius:5px;'>
-                                    <div>
-                                        <a href='{anzeige["Link"]}' target='_blank'><strong>{anzeige["Titel"]}</strong></a><br>
-                                        💶 <strong>{anzeige["Preis"]:.2f} €</strong>
-                                    </div>
-                                </div>
-                                """,
-                                unsafe_allow_html=True
-                            )
-        except Exception as e:
-            st.error(f"🚨 Fehler: {e}")
+    if not anzeigen:
+        st.warning("Keine Anzeigen gefunden. Bitte Modell oder API Key prüfen.")
+    else:
+        for anzeige in anzeigen:
+            bewertung = "💬 Verhandelbar" if anzeige["price"] < 1000 else "❌ Zu teuer"
+            farbe = "#d0ebff" if "Verhandelbar" in bewertung else "#ffe3e3"
 
-else:
-    st.info("⬅️ Gib links ein Modell an und klicke auf 'Anzeigen abrufen'.")
+            st.markdown(f"""
+            <div style='background-color: {farbe}; padding: 10px; border-radius: 10px; display: flex; align-items: center; margin-bottom: 10px;'>
+                <img src="{anzeige['thumbnail']}" style="width: 100px; height: auto; margin-right: 15px; border-radius: 5px;" />
+                <div>
+                    <h4 style='margin-bottom:5px;'>{anzeige['title']}</h4>
+                    <p style='margin:0;'>💰 <strong>{anzeige['price']} €</strong> | {bewertung}</p>
+                    <a href="{anzeige['link']}" target="_blank">🔗 Anzeige öffnen</a>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+st.caption("Version: ScraperAPI + BeautifulSoup | @2025")
