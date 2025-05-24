@@ -1,89 +1,86 @@
 import streamlit as st
-import asyncio
-from playwright.async_api import async_playwright
+import requests
 from bs4 import BeautifulSoup
-import re
+import pandas as pd
 
-# ----------------- Sidebar: Sucheinstellungen ----------------- #
-st.sidebar.title("🔍 Kleinanzeigen Scout")
-modell = st.sidebar.text_input("Modell", value="iPhone 14 Pro")
-min_price = st.sidebar.number_input("Mindestpreis (€)", value=100)
-max_price = st.sidebar.number_input("Maximalpreis (€)", value=1000)
-start_search = st.sidebar.button("📡 Anzeigen abrufen")
+st.set_page_config(page_title="📦 Kleinanzeigen Scout", layout="wide")
+st.title("📦 Kleinanzeigen Scout")
 
-# ----------------- Hauptbereich ----------------- #
-st.title("📱 Kleinanzeigen Scout")
-status_placeholder = st.empty()
+# Seitenleiste mit Filteroptionen
+st.sidebar.header("🔍 Filter")
+modell = st.sidebar.text_input("iPhone Modell", "iPhone 14 Pro")
 
-# ----------------- Scraping Funktion mit Playwright ----------------- #
-async def scrape_kleinanzeigen(modell, min_price, max_price):
-    keyword = modell.replace(" ", "-").lower()
-    url = f"https://www.kleinanzeigen.de/s-{keyword}/k0"
+st.sidebar.subheader("💰 Preisfilter (€)")
+preis_min = st.sidebar.number_input("Mindestpreis", value=100, step=10)
+preis_max = st.sidebar.number_input("Maximalpreis", value=1400, step=10)
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-        await page.goto(url)
-        await page.wait_for_timeout(5000)  # Warten auf JS-Rendering
-        html = await page.content()
-        await browser.close()
+st.sidebar.markdown("---")
 
-        soup = BeautifulSoup(html, "html.parser")
-        items = soup.select("article.aditem")
-        print(f"🔍 Gefundene Artikel: {len(items)}")
+# Button zum Abrufen
+if st.sidebar.button("🔄 Anzeigen abrufen"):
+    with st.spinner("Lade Anzeigen..."):
+        try:
+            keyword = modell.replace(" ", "-").lower()
+            url = f"https://www.kleinanzeigen.de/s-{keyword}/k0"
 
-        results = []
-        for item in items:
-            title_tag = item.select_one("a.ellipsis")
-            price_tag = item.select_one(".aditem-main--middle--price-shipping .aditem-main--middle--price")
-            img_tag = item.select_one("img")
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
+            }
+            response = requests.get(url, headers=headers)
 
-            if not title_tag or not price_tag:
-                continue
+            if response.status_code != 200:
+                st.error(f"❌ Fehler beim Abrufen der Seite: Statuscode {response.status_code}")
+            else:
+                soup = BeautifulSoup(response.text, "html.parser")
+                items = soup.select(".aditem")
 
-            title = title_tag.get_text(strip=True)
-            link = "https://www.kleinanzeigen.de" + title_tag["href"]
-            price_str = price_tag.get_text(strip=True).replace("€", "").replace(".", "").replace(",", ".")
-            thumbnail = img_tag["src"] if img_tag and "src" in img_tag.attrs else None
+                anzeigen = []
+                for item in items:
+                    title_tag = item.select_one(".aditem-main--middle--title")
+                    price_tag = item.select_one(".aditem-main--middle--price-shipping--price")
+                    href_tag = item.select_one("a")
+                    image_tag = item.select_one("img")
 
-            try:
-                price = float(re.search(r"\d+", price_str).group())
-            except:
-                continue
+                    if not title_tag or not price_tag:
+                        continue
 
-            if price < min_price or price > max_price:
-                continue
+                    title = title_tag.get_text(strip=True)
+                    price_str = price_tag.get_text(strip=True).replace("€", "").replace(".", "").replace(",", ".")
 
-            results.append({
-                "title": title,
-                "price": price,
-                "link": link,
-                "thumbnail": thumbnail
-            })
+                    try:
+                        price = float(price_str)
+                    except:
+                        continue
 
-        return results
+                    if preis_min <= price <= preis_max:
+                        anzeigen.append({
+                            "Titel": title,
+                            "Preis": price,
+                            "Link": "https://www.kleinanzeigen.de" + href_tag['href'] if href_tag else "",
+                            "Thumbnail": image_tag['src'] if image_tag and 'src' in image_tag.attrs else ""
+                        })
 
-# ----------------- Ergebnisanzeige ----------------- #
-def show_results(anzeigen):
-    if not anzeigen:
-        st.warning("❌ Keine passenden Anzeigen gefunden.")
-        return
+                if not anzeigen:
+                    st.warning("⚠️ Keine passenden Anzeigen gefunden.")
+                else:
+                    st.success(f"✅ {len(anzeigen)} Anzeige(n) gefunden.")
+                    for anzeige in anzeigen:
+                        farbe = "#e0f7e9"  # Grün als Standard
+                        with st.container():
+                            st.markdown(
+                                f"""
+                                <div style='background-color:{farbe}; padding:10px; border-radius:10px; margin-bottom:10px; display:flex; align-items:center;'>
+                                    <img src='{anzeige["Thumbnail"]}' style='width:100px; height:auto; margin-right:15px; border-radius:5px;'>
+                                    <div>
+                                        <a href='{anzeige["Link"]}' target='_blank'><strong>{anzeige["Titel"]}</strong></a><br>
+                                        💶 <strong>{anzeige["Preis"]:.2f} €</strong>
+                                    </div>
+                                </div>
+                                """,
+                                unsafe_allow_html=True
+                            )
+        except Exception as e:
+            st.error(f"🚨 Fehler: {e}")
 
-    for anzeige in anzeigen:
-        col1, col2 = st.columns([1, 5])
-        with col1:
-            if anzeige["thumbnail"]:
-                st.image(anzeige["thumbnail"], width=120)
-        with col2:
-            st.markdown(f"### [{anzeige['title']}]({anzeige['link']})")
-            st.markdown(f"💶 **{anzeige['price']} €**")
-
-# ----------------- Steuerung ----------------- #
-if start_search:
-    status_placeholder.info("🔄 Suche läuft... bitte warten...")
-    try:
-        anzeigen = asyncio.run(scrape_kleinanzeigen(modell, min_price, max_price))
-        status_placeholder.empty()
-        show_results(anzeigen)
-    except Exception as e:
-        status_placeholder.error(f"🚨 Fehler: {e}")
+else:
+    st.info("⬅️ Gib links ein Modell an und klicke auf 'Anzeigen abrufen'.")
