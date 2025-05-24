@@ -5,6 +5,7 @@ def fetch_kleinanzeigen(model_keyword):
     # Modell als URL-Keyword aufbereiten
     keyword = model_keyword.replace(" ", "-").lower()
     url = f"https://www.kleinanzeigen.de/s-{keyword}/k0"
+    print(f"📡 Abfrage-URL: {url}")
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -12,14 +13,27 @@ def fetch_kleinanzeigen(model_keyword):
                       "Chrome/122.0.0.0 Safari/537.36"
     }
 
-    response = requests.get(url, headers=headers)
+    try:
+        response = requests.get(url, headers=headers)
+    except Exception as e:
+        print(f"❌ Fehler beim Verbindungsaufbau: {e}")
+        return []
+
+    print(f"✅ HTTP Status Code: {response.status_code}")
 
     if response.status_code != 200:
-        print(f"Fehler beim Abrufen: Status Code {response.status_code}")
+        print(f"❌ Ungültiger HTTP-Statuscode: {response.status_code}")
         return []
 
     soup = BeautifulSoup(response.text, "html.parser")
     items = soup.select("article.aditem")
+    print(f"🔍 Anzahl gefundener Anzeigenblöcke (article.aditem): {len(items)}")
+
+    if not items:
+        # Optional: HTML-Ausschnitt zur Analyse anzeigen
+        preview = soup.prettify()[:2000]
+        print("🔎 HTML-Vorschau:\n", preview)
+        return []
 
     ergebnisse = []
 
@@ -46,7 +60,7 @@ def fetch_kleinanzeigen(model_keyword):
                 "thumbnail": bild_url
             })
         except Exception as e:
-            print(f"Fehler beim Verarbeiten eines Elements: {e}")
+            print(f"⚠️ Fehler bei Anzeige: {e}")
             continue
 
     return ergebnisse
