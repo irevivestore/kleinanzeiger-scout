@@ -19,9 +19,12 @@ DEBUG_MODE = st.sidebar.checkbox("🔧 Debug-Modus aktivieren")
 def fetch_ads(modell, min_price=None, max_price=None, nur_versand=False):
     keyword = modell.replace(" ", "-").lower()
     
-    # NEUE URL-Logik mit korrekter Preis-Struktur
+    # NEUE URL-Logik mit Integer-Preisen
     if min_price is not None and max_price is not None:
-        url = f"https://www.kleinanzeigen.de/s-preis:{min_price}:{max_price}/{keyword}/k0"
+        # Umwandlung in Integer für URL (entfernt Dezimalstellen)
+        min_price_int = int(min_price)
+        max_price_int = int(max_price)
+        url = f"https://www.kleinanzeigen.de/s-preis:{min_price_int}:{max_price_int}/{keyword}/k0"
     else:
         url = f"https://www.kleinanzeigen.de/s-{keyword}/k0"
     
@@ -95,9 +98,9 @@ st.title("🔎 Kleinanzeigen Scout")
 modell = st.text_input("🔍 iPhone-Modell", value="iPhone 14 Pro")
 col1, col2 = st.columns(2)
 with col1:
-    min_preis = st.number_input("💶 Mindestpreis (€)", value=None, placeholder="Optional")
+    min_preis = st.number_input("💶 Mindestpreis (€)", value=None, placeholder="Optional", step=1)
 with col2:
-    max_preis = st.number_input("💶 Maximalpreis (€)", value=None, placeholder="Optional")
+    max_preis = st.number_input("💶 Maximalpreis (€)", value=None, placeholder="Optional", step=1)
 nur_versand = st.checkbox("📦 Nur Angebote mit Versand")
 
 start_search = st.button("Anzeigen abrufen")
