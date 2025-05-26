@@ -5,6 +5,9 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import re
 
+# Streamlit Page Config muss als erstes kommen
+st.set_page_config(page_title="Kleinanzeigen Scout", layout="wide")
+
 # Deine ScraperAPI Zugangsdaten
 SCRAPERAPI_KEY = "0930d1cea7ce7a64dc09e44c9bf722b6"
 
@@ -87,7 +90,6 @@ def fetch_ads(modell, min_price=0, max_price=3000, nur_versand=False):
 
 
 # Streamlit App Interface
-st.set_page_config(page_title="Kleinanzeigen Scout", layout="wide")
 st.title("🔎 Kleinanzeigen Scout")
 
 modell = st.text_input("🔍 iPhone-Modell", value="iPhone 14 Pro")
