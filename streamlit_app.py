@@ -1,4 +1,4 @@
-# Kleinanzeigen Scout – Korrigierte Version
+# Kleinanzeigen Scout - Korrigierte Version mit robustem Parsing
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
@@ -38,28 +38,40 @@ def fetch_ads(modell, min_price=None, max_price=None, nur_versand=False):
                 
                 for card in cards:
                     try:
-                        # VERBESSERTE TITEL-EXTRAKTION
-                        title_tag = card.select_one('a[class*="ellipsis"]') or card.select_one('h2')
+                        # VERBESSERTE TITEL-EXTRAKTION (aktualisierte Selektoren)
+                        title_tag = (card.select_one('a.ellipsis') or 
+                                   card.select_one('h2.text-module-begin') or
+                                   card.select_one('a[href*="/s-anzeige"]'))
                         title = title_tag.get_text(strip=True) if title_tag else "Kein Titel"
                         
-                        # VERBESSERTE PREIS-EXTRAKTION
-                        price_tag = card.select_one('p[class*="price"]') or \
-                                  card.select_one('.aditem-main--middle--price') or \
-                                  card.select_one('.price')
+                        # VERBESSERTE PREIS-EXTRAKTION (mehrere Fallbacks)
+                        price_tag = (card.select_one('p.aditem-main--middle--price') or
+                                    card.select_one('div.aditem-main--middle--price') or
+                                    card.select_one('span.price'))
                         price_text = price_tag.get_text(strip=True) if price_tag else "0"
-                        price_match = re.search(r'\d+[\.,]?\d*', price_text.replace('.', ''))
-                        price = int(float(price_match.group().replace(',', '.'))) if price_match else 0
                         
-                        # Versandprüfung
-                        versand_moeglich = any(word in card.get_text().lower() 
-                                            for word in ["versand", "versenden", "shipping"])
+                        # Robustere Preisbereinigung
+                        price_clean = re.sub(r"[^\d,]", "", price_text).replace(",", ".")
+                        try:
+                            price = int(float(price_clean)) if price_clean else 0
+                        except:
+                            price = 0
+                        
+                        # Versandprüfung mit mehr Keywords
+                        card_text = card.get_text().lower()
+                        versand_moeglich = any(word in card_text 
+                                            for word in ["versand", "versenden", "shipping", "versand möglich"])
                         
                         if nur_versand and not versand_moeglich:
                             continue
                             
-                        # Link und Bild
-                        link = "https://www.kleinanzeigen.de" + card.find('a')['href'] if card.find('a') else ""
-                        img = card.find('img')['src'] if card.find('img') else ""
+                        # Link-Extraktion mit Fallback
+                        link_tag = card.select_one('a[href*="/s-anzeige"]')
+                        link = "https://www.kleinanzeigen.de" + link_tag['href'] if link_tag else ""
+                        
+                        # Bild-Extraktion
+                        img_tag = card.select_one('img[src^="https://"]')
+                        img = img_tag['src'] if img_tag else ""
                         
                         results.append({
                             "title": title,
@@ -71,20 +83,76 @@ def fetch_ads(modell, min_price=None, max_price=None, nur_versand=False):
                         
                     except Exception as e:
                         if DEBUG_MODE:
-                            st.write(f"⚠️ Anzeigenfehler: {e}")
+                            st.write(f"⚠️ Anzeigenfehler: {str(e)}")
                         continue
                 
                 return results
                 
         except requests.exceptions.Timeout:
             if attempt < MAX_RETRIES - 1:
-                sleep(2)
+                sleep(2 * (attempt + 1))
                 continue
-            st.error("Timeout - Bitte später versuchen")
+            st.error("⌛ Timeout - Server antwortet nicht")
             return []
-            
-    return []
+        except Exception as e:
+            st.error(f"❌ Fehler: {str(e)}")
+            return []
 
-# UI-Code (wie zuvor)
-st.title("🔎 Kleinanzeigen Scout")
-# [...] (Rest des UI-Codes bleibt gleich)
+# UI mit verbesserter Darstellung
+st.title("📱 iPhone Kleinanzeigen Scout")
+st.markdown("### Aktuelle Angebote durchsuchen")
+
+with st.form("search_form"):
+    col1, col2 = st.columns(2)
+    with col1:
+        modell = st.text_input("Modell", value="iPhone 15 Pro")
+    with col2:
+        nur_versand = st.checkbox("Nur mit Versand")
+    
+    col3, col4 = st.columns(2)
+    with col3:
+        min_preis = st.number_input("Mindestpreis (€)", min_value=0, value=None, step=1)
+    with col4:
+        max_preis = st.number_input("Maximalpreis (€)", min_value=0, value=None, step=1)
+    
+    submitted = st.form_submit_button("🔍 Suche starten")
+
+if submitted:
+    with st.spinner("Durchsuche Kleinanzeigen..."):
+        anzeigen = fetch_ads(
+            modell=modell,
+            min_price=min_preis,
+            max_price=max_preis,
+            nur_versand=nur_versand
+        )
+    
+    if not anzeigen:
+        st.warning("Keine passenden Angebote gefunden. Bitte Filter anpassen.")
+    else:
+        st.success(f"✅ {len(anzeigen)} Angebote gefunden")
+        
+        for anzeige in anzeigen:
+            with st.container():
+                cols = st.columns([1, 4])
+                with cols[0]:
+                    if anzeige["thumbnail"]:
+                        st.image(anzeige["thumbnail"], width=120)
+                
+                with cols[1]:
+                    st.markdown(f"""
+                    **{anzeige["title"]}**  
+                    **Preis:** {anzeige["price"]} € | **Versand:** {'✅ Ja' if anzeige["versand"] else '❌ Nein'}  
+                    [🔗 Anzeige öffnen]({anzeige["link"]})
+                    """)
+                st.divider()
+
+st.markdown("""
+<style>
+div[data-testid="stExpander"] div[role="button"] p {
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.caption("ℹ️ Tipp: Für präzisere Ergebnisse spezifische Modelle eingeben (z.B. 'iPhone 15 Pro Max 256GB')")
