@@ -1,4 +1,4 @@
-# Kleinanzeigen Scout – Korrigierte Version mit robustem Parsing
+# Kleinanzeigen Scout - Korrigierte Version mit robuster Preis-Extraktion
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
@@ -26,7 +26,6 @@ def fetch_ads(modell, min_price=None, max_price=None, nur_versand=False):
 
     if DEBUG_MODE:
         st.write(f"🔗 Ziel-URL: {url}")
-        st.write(f"📡 Scraper-URL: {scraper_url}")
 
     for attempt in range(MAX_RETRIES):
         try:
@@ -37,41 +36,43 @@ def fetch_ads(modell, min_price=None, max_price=None, nur_versand=False):
                 cards = soup.select("article.aditem")
                 results = []
                 
-                if DEBUG_MODE:
-                    st.write(f"📦 {len(cards)} Roh-Anzeigen gefunden")
-
                 for card in cards:
                     try:
-                        # TITEL
+                        # VERBESSERTE TITEL-EXTRAKTION
                         title_tag = (card.select_one('a.ellipsis') or 
                                      card.select_one('h2.text-module-begin') or
                                      card.select_one('a[href*="/s-anzeige"]'))
                         title = title_tag.get_text(strip=True) if title_tag else "Kein Titel"
-                        
-                        # PREIS – robuster Parser
-                        price_tag = (card.select_one('p.aditem-main--middle--price') or
-                                     card.select_one('div.aditem-main--middle--price') or
-                                     card.select_one('span.price'))
-                        price_text = price_tag.get_text(strip=True) if price_tag else "0 €"
-                        match = re.search(r"(\d{1,3}(?:\.\d{3})*|\d+)(?:,(\d{2}))?\s*€?", price_text)
-                        if match:
-                            preis_euro = match.group(1).replace(".", "")
-                            price = int(preis_euro)
+
+                        # NEU: Preis aus data-price lesen (Fallback: klassisch parsen)
+                        data_price = card.get("data-price")
+                        if data_price and data_price.isdigit():
+                            price = int(data_price)
                         else:
-                            price = 0
+                            price_tag = (card.select_one('p.aditem-main--middle--price') or
+                                         card.select_one('div.aditem-main--middle--price') or
+                                         card.select_one('span.price'))
+                            price_text = price_tag.get_text(strip=True) if price_tag else ""
+                            match = re.search(r"(\d{1,3}(?:\.\d{3})*|\d+)(?:,(\d{2}))?\s*€?", price_text)
+                            if match:
+                                preis_euro = match.group(1).replace(".", "")
+                                price = int(preis_euro)
+                            else:
+                                price = 0
                         
-                        # VERSAND
+                        # Versandprüfung mit mehreren Schlüsselwörtern
                         card_text = card.get_text().lower()
                         versand_moeglich = any(word in card_text 
                                                for word in ["versand", "versenden", "shipping", "versand möglich"])
+                        
                         if nur_versand and not versand_moeglich:
                             continue
-                        
-                        # LINK
+                            
+                        # Link-Extraktion
                         link_tag = card.select_one('a[href*="/s-anzeige"]')
                         link = "https://www.kleinanzeigen.de" + link_tag['href'] if link_tag else ""
                         
-                        # BILD
+                        # Bild-Extraktion
                         img_tag = card.select_one('img[src^="https://"]')
                         img = img_tag['src'] if img_tag else ""
                         
@@ -84,7 +85,7 @@ def fetch_ads(modell, min_price=None, max_price=None, nur_versand=False):
                         })
 
                         if DEBUG_MODE:
-                            st.write(f"✅ Anzeige: {title} | {price} € | Versand: {versand_moeglich}")
+                            st.write(f"📄 {title} — {price} €")
                         
                     except Exception as e:
                         if DEBUG_MODE:
@@ -142,6 +143,7 @@ if submitted:
                 with cols[0]:
                     if anzeige["thumbnail"]:
                         st.image(anzeige["thumbnail"], width=120)
+                
                 with cols[1]:
                     st.markdown(f"""
                     **{anzeige["title"]}**  
@@ -150,7 +152,6 @@ if submitted:
                     """)
                 st.divider()
 
-# UI Styling
 st.markdown("""
 <style>
 div[data-testid="stExpander"] div[role="button"] p {
