@@ -1,6 +1,5 @@
 from playwright.sync_api import sync_playwright
 import re
-import time
 
 def scrape_ads(modell):
     keyword = modell.replace(" ", "-").lower()
@@ -9,89 +8,34 @@ def scrape_ads(modell):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            viewport={"width": 1280, "height": 1024}
-        )
-        page = context.new_page()
+        page = browser.new_page()
+        
+        # Browser wie ein menschlicher Nutzer konfigurieren
+        page.set_viewport_size({"width": 1280, "height": 800})
+        page.set_extra_http_headers({
+            "Accept-Language": "de-DE,de;q=0.9"
+        })
 
         try:
-            # Seite mit vollständigem Load aufrufen
-            page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            time.sleep(3)  # Wartezeit für JavaScript
-            
-            # Scrollen um Lazy Loading zu triggern
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            time.sleep(2)
-            
-            # Debug: Screenshot zur Überprüfung
-            page.screenshot(path="debug_screenshot.png", full_page=True)
-            
-            # Alle Anzeigen-Elemente finden
+            # Seite aufrufen und auf Inhalte warten
+            page.goto(url, wait_until="networkidle", timeout=60000)
+            page.wait_for_selector("article.aditem", timeout=15000)
+
+            # Durch alle Anzeigen-Elemente iterieren
             ads = page.query_selector_all("article.aditem")
-            
-            for ad in ads[:15]:  # Begrenzung auf 15 Anzeigen
+            for ad in ads[:15]:  # Erste 15 Anzeigen
                 try:
                     # Titel extrahieren
-                    title = ad.query_selector("h2").inner_text().strip()
-                    
-                    # Preis mit mehreren Methoden extrahieren
-                    price = 0.0
-                    price_element = None
-                    
-                    # Methode 1: Standard-Preis-Element
-                    price_element = ad.query_selector("p.aditem-main--middle--price")
-                    
-                    # Methode 2: Alternative Preis-Elemente
-                    if not price_element:
-                        price_element = ad.query_selector("p.aditem-main--middle--price-shipping")
-                    
-                    # Methode 3: Suche nach Preis im gesamten Element
-                    if not price_element:
-                        ad_html = ad.inner_html()
-                        price_match = re.search(r"(\d[\d\.,]+\s*€)", ad_html)
-                        if price_match:
-                            price_text = price_match.group(1)
-                            price = float(re.sub(r"[^\d,.]", "", price_text).replace(",", "."))
-                    
-                    # Wenn Preis-Element gefunden wurde
-                    if price_element:
-                        price_text = price_element.inner_text().strip()
-                        # Behandlung von "VB" oder "Zu verschenken"
-                        if "VB" in price_text or "zu verschenken" in price_text.lower():
-                            price = -1.0
-                        else:
-                            # Extrahiere numerischen Wert
-                            price_match = re.search(r"(\d[\d\.,]+)", price_text)
-                            if price_match:
-                                price_str = price_match.group(1).replace(".", "").replace(",", ".")
-                                try:
-                                    price = float(price_str)
-                                except ValueError:
-                                    price = 0.0
+                    title_element = ad.query_selector("a.ellipsis")
+                    title = title_element.inner_text().strip() if title_element else "Kein Titel"
                     
                     # Link extrahieren
-                    link = "https://www.kleinanzeigen.de" + ad.query_selector("a").get_attribute("href")
+                    relative_link = title_element.get_attribute("href") if title_element else ""
+                    link = f"https://www.kleinanzeigen.de{relative_link}" if relative_link else ""
+
+                    # Preis-Extraktion mit robusten Selektoren
+                    price = 0.0
+                    price_element = ad.query_selector("p.aditem-main--middle--price, .price, [class*='price']")
                     
-                    # Bild-URL extrahieren
-                    img_element = ad.query_selector("img")
-                    img = img_element.get_attribute("src") if img_element else ""
-                    
-                    results.append({
-                        "title": title,
-                        "price": price,
-                        "link": link,
-                        "image": img
-                    })
-                    
-                except Exception as e:
-                    print(f"Fehler bei Anzeige: {str(e)}")
-                    continue
-                    
-        except Exception as e:
-            print(f"Hauptfehler: {str(e)}")
-        finally:
-            context.close()
-            browser.close()
-    
-    return results
+                    if price_element:
+                        price
