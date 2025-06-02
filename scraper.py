@@ -1,5 +1,6 @@
 from playwright.sync_api import sync_playwright
 import re
+import time
 
 def scrape_ads(modell):
     keyword = modell.replace(" ", "-").lower()
@@ -7,71 +8,96 @@ def scrape_ads(modell):
     results = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-        
-        # Realistische Browser-Einstellungen
-        page.set_viewport_size({"width": 1280, "height": 800})
-        page.set_extra_http_headers({
-            "Accept-Language": "de-DE,de;q=0.9",
-            "Accept": "text/html,application/xhtml+xml"
-        })
+        browser = p.chromium.launch(headless=False)  # Headless=False für sichtbaren Browser
+        context = browser.new_context()
+        page = context.new_page()
 
         try:
-            # Seite mit vollständigem Load aufrufen
-            page.goto(url, wait_until="networkidle", timeout=60000)
+            # Debug: Netzwerkaktivität protokollieren
+            def log_request(request):
+                if "api." in request.url:
+                    print(f">> API Request: {request.url}")
             
-            # Explizit auf Preiselemente warten
-            page.wait_for_selector("p.aditem-main--middle--price-shipping--price", timeout=10000)
-            
-            # Scrollen um Lazy Loading zu triggern
-            page.evaluate("window.scrollBy(0, 500)")
-            time.sleep(1)
+            page.on("request", log_request)
 
-            # Alle Anzeigen sammeln
+            print(f"\n=== Starte Scraping für {modell} ===")
+            page.goto(url, wait_until="networkidle", timeout=60000)
+            print("✓ Seite geladen")
+
+            # Debug: Screenshot der gesamten Seite
+            page.screenshot(path="debug_page.png", full_page=True)
+            print("✓ Screenshot gespeichert (debug_page.png)")
+
+            # Warte auf Anzeigen-Elemente
+            page.wait_for_selector("article.aditem", timeout=15000)
             ads = page.query_selector_all("article.aditem")
-            
-            for ad in ads[:15]:  # Begrenzung für Performance
+            print(f"ℹ Gefundene Anzeigen: {len(ads)}")
+
+            for index, ad in enumerate(ads[:5]):  # Nur erste 5 für Debugging
+                print(f"\n--- Verarbeite Anzeige {index + 1} ---")
+                
                 try:
+                    # Debug: HTML der einzelnen Anzeige speichern
+                    ad_html = ad.inner_html()
+                    with open(f"debug_ad_{index}.html", "w", encoding="utf-8") as f:
+                        f.write(ad_html)
+                    print(f"✓ Anzeigen-HTML gespeichert (debug_ad_{index}.html)")
+
                     # Titel extrahieren
                     title = ad.query_selector("a.ellipsis").inner_text().strip()
-                    
-                    # PREIS mit dem jetzt bekannten Selektor
+                    print(f"ℹ Titel: {title}")
+
+                    # PREIS Debugging
                     price_element = ad.query_selector("p.aditem-main--middle--price-shipping--price")
-                    price = 0.0
                     
-                    if price_element:
-                        price_text = price_element.inner_text().strip()
-                        # Bereinigung des Preis-Textes
+                    if not price_element:
+                        print("❌ Preis-Element nicht gefunden! Alternative Selektor-Versuche:")
+                        alt_selectors = [
+                            ".aditem-main--middle--price",
+                            ".price",
+                            "[class*='price']"
+                        ]
+                        for selector in alt_selectors:
+                            alt_element = ad.query_selector(selector)
+                            print(f"  - {selector}: {'gefunden' if alt_element else 'nicht vorhanden'}")
+                    else:
+                        print("✓ Preis-Element gefunden")
+                        price_text = price_element.inner_text()
+                        print(f"ℹ Roh-Preis-Text: '{price_text}'")
+                        
+                        # Preisbereinigung
                         price_clean = re.sub(r"[^\d,.]", "", price_text).replace(",", ".")
+                        print(f"ℹ Bereinigter Preis: '{price_clean}'")
+                        
                         try:
                             price = float(price_clean) if price_clean else 0.0
-                        except ValueError:
+                            print(f"✓ Preis erfolgreich geparst: {price}€")
+                        except ValueError as e:
+                            print(f"❌ Fehler bei Preis-Konvertierung: {str(e)}")
                             price = 0.0
-                    
-                    # Link
-                    relative_link = ad.query_selector("a.ellipsis").get_attribute("href")
-                    link = f"https://www.kleinanzeigen.de{relative_link}"
-                    
-                    # Bild (priorisiert data-src falls vorhanden)
-                    img_element = ad.query_selector("img")
-                    img = (img_element.get_attribute("data-src") or 
-                           img_element.get_attribute("src")) if img_element else ""
-                    
+
+                    # Ergebnisse sammeln
                     results.append({
                         "title": title,
-                        "price": price,
-                        "link": link,
-                        "image": img
+                        "price": price if 'price' in locals() else 0.0,
+                        "link": f"https://www.kleinanzeigen.de{ad.query_selector('a.ellipsis').get_attribute('href')}",
+                        "image": ad.query_selector("img").get_attribute("src") if ad.query_selector("img") else ""
                     })
-                    
+
                 except Exception as e:
-                    print(f"Fehler bei Anzeige: {str(e)}")
+                    print(f"❌ Fehler in Anzeige {index + 1}: {str(e)}")
                     continue
-                    
+
         except Exception as e:
-            print(f"Seitenfehler: {str(e)}")
+            print(f"❌ Hauptfehler: {str(e)}")
         finally:
+            context.close()
             browser.close()
-    
+
+    print("\n=== Scraping abgeschlossen ===")
+    print(f"Ergebnisse: {results}")
     return results
+
+# Beispielaufruf
+if __name__ == "__main__":
+    scrape_ads("iphone 14")
