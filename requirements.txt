@@ -1,7 +1,0 @@
-streamlit
-requests
-beautifulsoup4
-pandas
-fireworks-ai
-httpx
-pillow
