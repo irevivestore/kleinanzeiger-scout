@@ -23,16 +23,32 @@ def scrape_ads(modell):
         for card in cards:
             try:
                 title = card.select_one("h2").get_text(strip=True) if card.select_one("h2") else "Kein Titel"
-                price_text = card.select_one("p.aditem-main--middle--price").get_text(strip=True) if card.select_one("p.aditem-main--middle--price") else "0"
-                price = int(re.sub(r"[^\d]", "", price_text)) if price_text else 0
+                
+                # Verbesserte Preis-Extraktion
+                price_element = card.select_one("p.aditem-main--middle--price")
+                if price_element:
+                    price_text = price_element.get_text(strip=True)
+                    # Entfernt alle Nicht-Ziffern außer dem Dezimalpunkt
+                    price_clean = re.sub(r"[^\d,.]", "", price_text)
+                    # Ersetzt Komma durch Punkt für float-Konvertierung
+                    price_clean = price_clean.replace(",", ".").replace("€", "")
+                    try:
+                        price = float(price_clean) if price_clean else 0.0
+                    except ValueError:
+                        price = 0.0
+                else:
+                    price = 0.0
+                
                 link = "https://www.kleinanzeigen.de" + card.select_one("a")["href"] if card.select_one("a") else ""
                 img = card.select_one("img")["src"] if card.select_one("img") else ""
+                
                 results.append({
                     "title": title,
                     "price": price,
                     "link": link,
                     "image": img
                 })
-            except Exception:
+            except Exception as e:
+                print(f"Fehler bei der Verarbeitung einer Anzeige: {e}")
                 continue
     return results
