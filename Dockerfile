@@ -1,5 +1,6 @@
 FROM python:3.11-slim
 
+# Systemabhängigkeiten für Playwright/Chromium
 RUN apt-get update && apt-get install -y \
     libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
     libatspi2.0-0 libxcomposite1 libxdamage1 libxfixes3 \
@@ -7,10 +8,24 @@ RUN apt-get update && apt-get install -y \
     libxrandr2 libgtk-3-0 wget curl ca-certificates fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt && playwright install chromium
+# Umgebungsvariablen für Streamlit korrekt setzen
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV NODE_OPTIONS=--openssl-legacy-provider
 
+# Arbeitsverzeichnis setzen
+WORKDIR /app
+
+# Anforderungen installieren
+COPY requirements.txt .
+RUN pip install --upgrade pip
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Playwright: Browser installieren (Chromium)
+RUN playwright install --with-deps chromium
+
+# Projektdateien kopieren
 COPY . .
 
-CMD ["python", "app.py"]
+# Startbefehl für Streamlit (nicht nur "python app.py")
+CMD ["streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0"]
