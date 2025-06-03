@@ -11,6 +11,7 @@ def index():
         modell = request.form.get("modell")
         results = scrape_ads(modell)
 
+
     return render_template_string("""
         <html><head><title>Kleinanzeigen Scout</title></head><body>
         <h2>🔎 Kleinanzeigen Scout</h2>
