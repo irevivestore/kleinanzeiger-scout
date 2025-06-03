@@ -3,7 +3,7 @@ import streamlit as st
 from scraper import scrape_ads
 
 st.set_page_config(page_title="Kleinanzeigen Scout", layout="wide")
-st.title("🔎 Kleinanzeigen Scooooout")
+st.title("🔎 Kleinanzeigen Scout")
 
 modell = st.text_input("Gerätemodell eingeben", value="iPhone 14 Pro")
 
