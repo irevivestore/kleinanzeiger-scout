@@ -1,7 +1,5 @@
 app = "kleinanzeiger-scout"
 
-[build]
-  builder = "Dockerfile"
 
 [http_service]
   internal_port = 8080
