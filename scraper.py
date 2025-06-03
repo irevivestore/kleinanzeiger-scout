@@ -9,7 +9,7 @@ def get_prices_only(modell):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)  # Sichtbar für Debugging
         page = browser.new_page()
-        
+
         try:
             # 1. Seite laden
             page.goto(url, timeout=60000)
