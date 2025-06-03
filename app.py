@@ -7,6 +7,9 @@ st.set_page_config(page_title="Kleinanzeigen Scout", layout="wide")
 st.title("📱 Kleinanzeigen Scout")
 st.markdown("Durchsuche Angebote und bewerte sie nach Reparaturbedarf")
 
+if "anzeigen" not in st.session_state:
+    st.session_state.anzeigen = []
+
 # Formular für die Suche
 with st.form("filters"):
     col1, col2, col3 = st.columns(3)
@@ -18,54 +21,58 @@ with st.form("filters"):
 
 if submit:
     with st.spinner("Suche läuft..."):
-        anzeigen = scrape_ads(modell, min_preis, max_preis, nur_versand)
+        st.session_state.anzeigen = scrape_ads(modell, min_preis, max_preis, nur_versand)
 
-    if not anzeigen:
-        st.warning("Keine Anzeigen gefunden.")
-    else:
-        st.success(f"{len(anzeigen)} Anzeigen gefunden")
+anzeigen = st.session_state.anzeigen
 
-        for idx, anzeige in enumerate(anzeigen):
-            farbe = {"gruen": "#d4edda", "blau": "#d1ecf1", "rot": "#f8d7da"}.get(anzeige["bewertung"], "#ffffff")
-            with st.container():
-                st.markdown(f"""
-                <div style='background-color: {farbe}; padding: 10px; border-radius: 5px;'>
-                <div style='display: flex; gap: 20px;'>
-                    <div>
-                        <img src="{anzeige['image']}" width="120"/>
-                    </div>
-                    <div>
-                        <h4>{anzeige['title']}</h4>
-                        <b>Preis:</b> {anzeige['price']} €  
-                        <b>Max. Einkaufspreis:</b> {anzeige['max_ek']:.2f} €  
-                        <b>Versand:</b> {'✅ Ja' if anzeige['versand'] else '❌ Nein'}  
-                        <b>Reparaturkosten:</b> {anzeige['reparaturkosten']} €  
-                        <a href="{anzeige['link']}" target="_blank">🔗 Anzeige öffnen</a>
-                    </div>
+if not anzeigen:
+    st.warning("Keine Anzeigen gefunden.")
+else:
+    st.success(f"{len(anzeigen)} Anzeigen gefunden")
+
+    for idx, anzeige in enumerate(anzeigen):
+        farbe = {"gruen": "#d4edda", "blau": "#d1ecf1", "rot": "#f8d7da"}.get(anzeige["bewertung"], "#ffffff")
+        with st.container():
+            st.markdown(f"""
+            <div style='background-color: {farbe}; padding: 10px; border-radius: 5px;'>
+            <div style='display: flex; gap: 20px;'>
+                <div>
+                    <img src="{anzeige['image']}" width="120"/>
                 </div>
+                <div>
+                    <h4>{anzeige['title']}</h4>
+                    <b>Preis:</b> {anzeige['price']} €<br>
+                    <b>Max. Einkaufspreis:</b> {anzeige['max_ek']:.2f} €<br>
+                    <b>Versand:</b> {'✅ Ja' if anzeige['versand'] else '❌ Nein'}<br>
+                    <b>Reparaturkosten:</b> {anzeige['reparaturkosten']} €<br>
+                    <a href="{anzeige['link']}" target="_blank">🔗 Anzeige öffnen</a>
                 </div>
-                """, unsafe_allow_html=True)
+            </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-                # Beschreibung ein- / ausklappbar
-                with st.expander("📄 Beschreibung anzeigen"):
-                    st.write(anzeige["beschreibung"])
+            with st.expander("📄 Beschreibung anzeigen"):
+                st.write(anzeige["beschreibung"])
 
-                # Defekte manuell setzen
-                st.markdown("**Defekte manuell auswählen (optional):**")
-                manuelle_defekte = st.multiselect(
-                    label=f"Defekte für Anzeige {idx+1}",
-                    options=list(REPARATURKOSTEN.keys()),
-                    key=f"defekt_{idx}"
+            st.markdown("**Defekte manuell auswählen (optional):**")
+            manuelle_defekte = st.multiselect(
+                label="Defekte", options=list(REPARATURKOSTEN.keys()),
+                key=f"defekt_{idx}"
+            )
+
+            if manuelle_defekte:
+                neue_reparatur = sum(REPARATURKOSTEN[d] for d in manuelle_defekte)
+                neue_max_ek = VERKAUFSPREIS - neue_reparatur - WUNSCH_MARGE
+                neue_bewertung = (
+                    "gruen" if anzeige['price'] <= neue_max_ek else
+                    "blau" if anzeige['price'] <= VERKAUFSPREIS - neue_reparatur - (WUNSCH_MARGE * 0.9) else
+                    "rot"
                 )
-                if manuelle_defekte:
-                    neue_reparatur = sum(REPARATURKOSTEN[d] for d in manuelle_defekte)
-                    neue_max_ek = VERKAUFSPREIS - neue_reparatur - WUNSCH_MARGE
-                    neue_bewertung = "gruen" if anzeige['price'] <= neue_max_ek else ("blau" if anzeige['price'] <= VERKAUFSPREIS - neue_reparatur - (WUNSCH_MARGE * 0.9) else "rot")
 
-                    st.markdown(f"🧾 Neue Reparaturkosten: **{neue_reparatur} €**")
-                    st.markdown(f"💰 Neuer max. Einkaufspreis: **{neue_max_ek:.2f} €**")
-                    st.markdown(f"🎯 Neue Bewertung: **{neue_bewertung.upper()}**")
+                st.markdown(f"🧾 Neue Reparaturkosten: **{neue_reparatur} €**")
+                st.markdown(f"💰 Neuer max. Einkaufspreis: **{neue_max_ek:.2f} €**")
+                st.markdown(f"🎯 Neue Bewertung: **{neue_bewertung.upper()}**")
 
-                st.divider()
+            st.divider()
 
 st.caption("🔧 Hinweis: Die Daten stammen von öffentlich zugänglichen Anzeigen auf kleinanzeigen.de")
