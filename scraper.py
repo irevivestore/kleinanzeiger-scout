@@ -19,16 +19,15 @@ REPARATURKOSTEN = {
     "defekt": 0
 }
 
-
-# Funktion zur Bewertung basierend auf Beschreibung
-def bewerte_anzeige(beschreibung):
+# Funktion zur Bewertung basierend auf Beschreibung und aktiven Defekt-Checkboxen
+def bewerte_anzeige(beschreibung, manuelle_defekte=None):
     gesamt_reparatur = 0
     beschreibung = beschreibung.lower()
-    for defekt, kosten in REPARATURKOSTEN.items():
-        if defekt in beschreibung:
-            gesamt_reparatur += kosten
+    defekte = REPARATURKOSTEN.keys()
+    for defekt in defekte:
+        if (manuelle_defekte and defekt in manuelle_defekte) or defekt in beschreibung:
+            gesamt_reparatur += REPARATURKOSTEN[defekt]
     return gesamt_reparatur
-
 
 def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False):
     keyword = modell.replace(" ", "-").lower()
@@ -88,9 +87,11 @@ def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False):
                         "link": link,
                         "image": img_url,
                         "versand": versand,
+                        "beschreibung": description_text,
                         "reparaturkosten": reparatur,
                         "max_ek": max_ek,
-                        "bewertung": bewertung
+                        "bewertung": bewertung,
+                        "manuelle_defekte": []
                     })
 
                 except Exception as inner_e:
