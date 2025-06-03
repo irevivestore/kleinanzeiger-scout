@@ -1,8 +1,5 @@
 app = "kleinanzeiger-scout"
 
-[build]
-  image = "registry.fly.io/kleinanzeiger-scout"
-
 [env]
   PORT = "8080"
 
