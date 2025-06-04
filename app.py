@@ -1,54 +1,107 @@
 # app.py
 
 import streamlit as st
+from scraper import scrape_ads, REPARATURKOSTEN_DEFAULT
+import sqlite3
 import json
 import os
-from scraper import scrape_ads, REPARATURKOSTEN, VERKAUFSPREIS, WUNSCH_MARGE
+
+# 📦 Konfiguration DB Setup
+def init_db():
+    conn = sqlite3.connect("konfigurationen.db")
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS konfigurationen (
+            modell TEXT PRIMARY KEY,
+            verkaufspreis INTEGER,
+            wunsch_marge INTEGER,
+            reparaturkosten TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# 📂 Laden gespeicherter Konfiguration aus DB
+def lade_konfiguration(modell):
+    conn = sqlite3.connect("konfigurationen.db")
+    c = conn.cursor()
+    c.execute("SELECT verkaufspreis, wunsch_marge, reparaturkosten FROM konfigurationen WHERE modell = ?", (modell,))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return {
+            "verkaufspreis": row[0],
+            "wunsch_marge": row[1],
+            "reparaturkosten": json.loads(row[2])
+        }
+    return None
+
+# 💾 Konfiguration speichern
+
+def speichere_konfiguration(modell, verkaufspreis, wunsch_marge, reparaturkosten):
+    conn = sqlite3.connect("konfigurationen.db")
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO konfigurationen (modell, verkaufspreis, wunsch_marge, reparaturkosten)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(modell) DO UPDATE SET
+            verkaufspreis = excluded.verkaufspreis,
+            wunsch_marge = excluded.wunsch_marge,
+            reparaturkosten = excluded.reparaturkosten
+    """, (modell, verkaufspreis, wunsch_marge, json.dumps(reparaturkosten)))
+    conn.commit()
+    conn.close()
 
 st.set_page_config(page_title="Kleinanzeigen Scout", layout="wide")
 st.title("📱 Kleinanzeigen Scout")
 st.markdown("Durchsuche Angebote und bewerte sie nach Reparaturbedarf")
 
-CONFIG_DIR = "configs"
-os.makedirs(CONFIG_DIR, exist_ok=True)
-
 if "anzeigen" not in st.session_state:
     st.session_state.anzeigen = []
+if "reparaturkosten" not in st.session_state:
+    st.session_state.reparaturkosten = REPARATURKOSTEN_DEFAULT.copy()
+if "verkaufspreis" not in st.session_state:
+    st.session_state.verkaufspreis = 500
+if "wunsch_marge" not in st.session_state:
+    st.session_state.wunsch_marge = 120
 
-if "konfig" not in st.session_state:
-    st.session_state.konfig = REPARATURKOSTEN.copy()
-
-# Konfiguration laden
-st.markdown("### ⚙️ Modell-Konfigurationen")
-with st.expander("🔧 Konfiguration anpassen oder laden"):
-    konfig_files = [f for f in os.listdir(CONFIG_DIR) if f.endswith(".json")]
-    col1, col2 = st.columns([3, 1])
-    selected_file = col1.selectbox("Modell-Konfiguration laden", ["- Keine -"] + konfig_files)
-    if col2.button("📂 Laden") and selected_file != "- Keine -":
-        with open(os.path.join(CONFIG_DIR, selected_file), "r") as f:
-            st.session_state.konfig = json.load(f)
-
-    st.markdown("#### Reparaturkosten anpassen:")
-    for defekt, kosten in st.session_state.konfig.items():
-        st.session_state.konfig[defekt] = st.number_input(
-            f"{defekt.capitalize()}", min_value=0, max_value=1000, step=5, value=kosten, key=f"kosten_{defekt}"
-        )
-
-    col3, col4 = st.columns([3, 1])
-    save_as = col3.text_input("Speichern als (Modellname)", value="iPhone 14 Pro")
-    if col4.button("💾 Speichern"):
-        with open(os.path.join(CONFIG_DIR, f"{save_as}.json"), "w") as f:
-            json.dump(st.session_state.konfig, f)
-        st.success(f"Konfiguration gespeichert unter: {save_as}.json")
-
-# Formular für die Suche
+# Formular für Suche
 with st.form("filters"):
     col1, col2, col3 = st.columns(3)
     modell = col1.text_input("🔍 Gerätemodell", value="iPhone 14 Pro")
     min_preis = col2.number_input("💶 Mindestpreis", min_value=0, value=0)
     max_preis = col3.number_input("💶 Maximalpreis", min_value=0, value=1000)
     nur_versand = st.checkbox("📦 Nur mit Versand")
+    config_laden = st.form_submit_button("📂 Konfiguration laden")
     submit = st.form_submit_button("🔎 Anzeigen durchsuchen")
+
+if config_laden:
+    konfig = lade_konfiguration(modell)
+    if konfig:
+        st.session_state.verkaufspreis = konfig["verkaufspreis"]
+        st.session_state.wunsch_marge = konfig["wunsch_marge"]
+        st.session_state.reparaturkosten = konfig["reparaturkosten"]
+        st.success("Modell-Konfiguration geladen")
+    else:
+        st.info("Keine gespeicherte Konfiguration für dieses Modell gefunden")
+
+# Einstellungsbereich
+with st.expander("⚙️ Bewertungsparameter anpassen & speichern"):
+    st.session_state.verkaufspreis = st.number_input("📦 Verkaufspreis (€)", min_value=0, value=st.session_state.verkaufspreis)
+    st.session_state.wunsch_marge = st.number_input("🎯 Wunschmarge (€)", min_value=0, value=st.session_state.wunsch_marge)
+
+    st.markdown("### 🔧 Reparaturkosten pro Defekt:")
+    for defekt in st.session_state.reparaturkosten.keys():
+        st.session_state.reparaturkosten[defekt] = st.number_input(
+            defekt.capitalize(), min_value=0, max_value=1000,
+            value=st.session_state.reparaturkosten[defekt], step=5, key=f"rep_{defekt}"
+        )
+
+    if st.button("💾 Konfiguration speichern"):
+        speichere_konfiguration(modell, st.session_state.verkaufspreis, st.session_state.wunsch_marge, st.session_state.reparaturkosten)
+        st.success("Konfiguration gespeichert")
 
 if submit:
     with st.spinner("Suche läuft..."):
@@ -62,7 +115,15 @@ else:
     st.success(f"{len(anzeigen)} Anzeigen gefunden")
 
     for idx, anzeige in enumerate(anzeigen):
-        farbe = {"gruen": "#d4edda", "blau": "#d1ecf1", "rot": "#f8d7da"}.get(anzeige["bewertung"], "#ffffff")
+        rep_kosten = anzeige.get("reparaturkosten", 0)
+        max_ek = st.session_state.verkaufspreis - rep_kosten - st.session_state.wunsch_marge
+        bewertung = (
+            "gruen" if anzeige['price'] <= max_ek else
+            "blau" if anzeige['price'] <= st.session_state.verkaufspreis - rep_kosten - (st.session_state.wunsch_marge * 0.9) else
+            "rot"
+        )
+
+        farbe = {"gruen": "#d4edda", "blau": "#d1ecf1", "rot": "#f8d7da"}.get(bewertung, "#ffffff")
         with st.container():
             st.markdown(f"""
             <div style='background-color: {farbe}; padding: 10px; border-radius: 5px;'>
@@ -73,9 +134,9 @@ else:
                 <div>
                     <h4>{anzeige['title']}</h4>
                     <b>Preis:</b> {anzeige['price']} €<br>
-                    <b>Max. Einkaufspreis:</b> {anzeige['max_ek']:.2f} €<br>
+                    <b>Max. Einkaufspreis:</b> {max_ek:.2f} €<br>
                     <b>Versand:</b> {'✅ Ja' if anzeige['versand'] else '❌ Nein'}<br>
-                    <b>Reparaturkosten:</b> {anzeige['reparaturkosten']} €<br>
+                    <b>Reparaturkosten:</b> {rep_kosten} €<br>
                     <a href="{anzeige['link']}" target="_blank">🔗 Anzeige öffnen</a>
                 </div>
             </div>
@@ -85,18 +146,18 @@ else:
             with st.expander("📄 Beschreibung anzeigen"):
                 st.write(anzeige["beschreibung"])
 
-            st.markdown("**Defekte manuell auswählen (optional):**")
             manuelle_defekte = st.multiselect(
-                label="Defekte", options=list(st.session_state.konfig.keys()),
+                label="🔧 Manuelle Defekte (optional)",
+                options=list(st.session_state.reparaturkosten.keys()),
                 key=f"defekt_{idx}"
             )
 
             if manuelle_defekte:
-                neue_reparatur = sum(st.session_state.konfig[d] for d in manuelle_defekte)
-                neue_max_ek = VERKAUFSPREIS - neue_reparatur - WUNSCH_MARGE
+                neue_reparatur = sum(st.session_state.reparaturkosten[d] for d in manuelle_defekte)
+                neue_max_ek = st.session_state.verkaufspreis - neue_reparatur - st.session_state.wunsch_marge
                 neue_bewertung = (
                     "gruen" if anzeige['price'] <= neue_max_ek else
-                    "blau" if anzeige['price'] <= VERKAUFSPREIS - neue_reparatur - (WUNSCH_MARGE * 0.9) else
+                    "blau" if anzeige['price'] <= st.session_state.verkaufspreis - neue_reparatur - (st.session_state.wunsch_marge * 0.9) else
                     "rot"
                 )
 
