@@ -1,6 +1,6 @@
 # config.py
 
-REPARATURKOSTEN = {
+REPARATURKOSTEN_DEFAULT = {
     "display": 80,
     "akku": 30,
     "backcover": 60,
@@ -10,8 +10,8 @@ REPARATURKOSTEN = {
     "face id": 80,
     "wasserschaden": 250,
     "kein bild": 80,
-    "defekt": 0  # allgemeiner Hinweis
+    "defekt": 0  # Allgemeiner Platzhalter
 }
 
-VERKAUFSPREIS = 500  # z. B. realistischer Verkaufspreis
-WUNSCH_MARGE = 120   # gewünschte Marge
+VERKAUFSPREIS_DEFAULT = 500
+WUNSCH_MARGE_DEFAULT = 120
