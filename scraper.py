@@ -1,94 +1,68 @@
 # scraper.py
 
 from playwright.sync_api import sync_playwright
+from datetime import datetime
 import re
+import sqlite3
 
-# Bewertungsparameter
-VERKAUFSPREIS = 500
-WUNSCH_MARGE = 120
-REPARATURKOSTEN = {
-    "display": 80,
-    "akku": 30,
-    "backcover": 60,
-    "kamera": 100,
-    "lautsprecher": 60,
-    "mikrofon": 50,
-    "face id": 80,
-    "wasserschaden": 250,
-    "kein bild": 80,
-    "defekt": 0
-}
+DB_PATH = "anzeigen.db"
 
-def scrape_ads(modell, min_price=0, max_price=10000, nur_versand=False, debug=False):
+def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False):
     keyword = modell.replace(" ", "-").lower()
-    url = f"https://www.kleinanzeigen.de/s-preis:{min_price}:{max_price}/{keyword}/k0"
-    if debug:
-        print(f"[DEBUG] URL: {url}")
-
+    url = f"https://www.kleinanzeigen.de/s-{keyword}/k0"
     results = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context()
+        page = context.new_page()
 
         try:
             page.goto(url, timeout=60000)
-            page.wait_for_selector("article.aditem", timeout=10000)
+            page.wait_for_selector("article.aditem", timeout=15000)
             cards = page.query_selector_all("article.aditem")
 
             for card in cards:
                 try:
                     title = card.query_selector("a.ellipsis").inner_text().strip()
-                    preis_element = card.query_selector("p.aditem-main--middle--price-shipping--price")
-                    preis_text = preis_element.inner_text().strip() if preis_element else "0"
-                    preis_clean = re.sub(r"[^\d,]", "", preis_text).replace(",", ".")
-                    preis = float(preis_clean) if preis_clean else 0.0
+                    link = "https://www.kleinanzeigen.de" + card.query_selector("a.ellipsis").get_attribute("href")
+                    image = card.query_selector("img").get_attribute("src") if card.query_selector("img") else ""
+                    beschreibung = card.inner_text().strip()
+                    
+                    price_elem = card.query_selector("p.aditem-main--middle--price-shipping--price") or card.query_selector("p.aditem-main--middle--price")
+                    raw_price = price_elem.inner_text().strip() if price_elem else ""
+                    price_clean = re.sub(r"[^\d]", "", raw_price)
+                    price = int(price_clean) if price_clean else 0
 
-                    beschreibung_element = card.query_selector("p.aditem-main--middle--description")
-                    beschreibung = beschreibung_element.inner_text().strip() if beschreibung_element else ""
+                    versand = "versand" in beschreibung.lower()
 
-                    versand = "versand" in card.inner_text().lower()
                     if nur_versand and not versand:
                         continue
+                    if min_price and price < min_price:
+                        continue
+                    if max_price and price > max_price:
+                        continue
 
-                    bild = card.query_selector("img")
-                    bild_url = bild.get_attribute("src") if bild else ""
-                    link = "https://www.kleinanzeigen.de" + card.query_selector("a.ellipsis").get_attribute("href")
-
-                    # Standardbewertung
-                    defekte = []
-                    reparatur_summe = 0
-                    max_ek = VERKAUFSPREIS - reparatur_summe - WUNSCH_MARGE
-                    bewertung = (
-                        "gruen" if preis <= max_ek else
-                        "blau" if preis <= VERKAUFSPREIS - reparatur_summe - (WUNSCH_MARGE * 0.9) else
-                        "rot"
-                    )
-
-                    results.append({
+                    eintrag = {
                         "title": title,
-                        "price": preis,
+                        "price": price,
+                        "link": link,
+                        "image": image,
                         "beschreibung": beschreibung,
                         "versand": versand,
-                        "image": bild_url,
-                        "link": link,
-                        "reparaturkosten": reparatur_summe,
-                        "max_ek": max_ek,
-                        "bewertung": bewertung
-                    })
+                        "erstellt_am": datetime.now().strftime("%Y-%m-%d"),
+                        "aktualisiert_am": datetime.now().strftime("%Y-%m-%d")
+                    }
+
+                    results.append(eintrag)
 
                 except Exception as e:
-                    if debug:
-                        print(f"[DEBUG] Fehler bei Anzeige: {e}")
+                    print(f"Fehler bei Anzeige: {e}")
+                    continue
 
         except Exception as e:
-            if debug:
-                print(f"[DEBUG] Fehler beim Seitenabruf: {e}")
-
+            print(f"Scrape-Fehler: {e}")
         finally:
             browser.close()
 
     return results
-
-# Export der Konstanten für die App
-__all__ = ["scrape_ads", "REPARATURKOSTEN", "VERKAUFSPREIS", "WUNSCH_MARGE"]
