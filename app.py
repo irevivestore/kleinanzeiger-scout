@@ -1,13 +1,15 @@
 # app.py
 
 import streamlit as st
+import json
+import os
 from scraper import scrape_ads, REPARATURKOSTEN
 
 st.set_page_config(page_title="Kleinanzeigen Scout", layout="wide")
 st.title("📱 Kleinanzeigen Scout")
 st.markdown("Durchsuche Angebote und bewerte sie nach Reparaturbedarf")
 
-# 🧮 Bewertungsparameter (anpassbar)
+# 🧮 Bewertungsparameter mit Defaults
 if "verkaufspreis" not in st.session_state:
     st.session_state.verkaufspreis = 500
 if "wunsch_marge" not in st.session_state:
@@ -15,16 +17,54 @@ if "wunsch_marge" not in st.session_state:
 if "reparaturkosten" not in st.session_state:
     st.session_state.reparaturkosten = REPARATURKOSTEN.copy()
 
-# 🔧 Optional: Bewertungsparameter einblenden
+# 📁 Konfigurationsverzeichnis
+CONFIG_DIR = "configs"
+os.makedirs(CONFIG_DIR, exist_ok=True)
+
+def save_config(name):
+    data = {
+        "verkaufspreis": st.session_state.verkaufspreis,
+        "wunsch_marge": st.session_state.wunsch_marge,
+        "reparaturkosten": st.session_state.reparaturkosten,
+    }
+    with open(os.path.join(CONFIG_DIR, f"{name}.json"), "w") as f:
+        json.dump(data, f)
+
+def load_config(name):
+    with open(os.path.join(CONFIG_DIR, f"{name}.json"), "r") as f:
+        data = json.load(f)
+        st.session_state.verkaufspreis = data["verkaufspreis"]
+        st.session_state.wunsch_marge = data["wunsch_marge"]
+        st.session_state.reparaturkosten = data["reparaturkosten"]
+
+# ⚙️ Konfiguration anzeigen
 if st.checkbox("⚙️ Bewertungsparameter anzeigen / bearbeiten"):
     with st.expander("🛠 Bewertungsparameter konfigurieren", expanded=True):
-        st.session_state.verkaufspreis = st.slider("Verkaufspreis (€)", 100, 2000, st.session_state.verkaufspreis, step=10)
-        st.session_state.wunsch_marge = st.slider("Wunschmarge (€)", 0, 500, st.session_state.wunsch_marge, step=10)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.number_input("Verkaufspreis (€)", min_value=0, step=10, key="verkaufspreis")
+            st.number_input("Wunschmarge (€)", min_value=0, step=10, key="wunsch_marge")
+        with col2:
+            config_files = [f[:-5] for f in os.listdir(CONFIG_DIR) if f.endswith(".json")]
+            selected = st.selectbox("🔁 Konfiguration laden", options=["-"] + config_files)
+            if selected != "-":
+                load_config(selected)
+                st.success(f"🔁 Konfiguration '{selected}' geladen")
+
         st.markdown("### 🔩 Reparaturkosten pro Defekt")
         for defekt in st.session_state.reparaturkosten:
-            st.session_state.reparaturkosten[defekt] = st.slider(
-                f"{defekt.capitalize()} (€)", 0, 300, st.session_state.reparaturkosten[defekt], step=10
+            st.number_input(
+                label=f"{defekt.capitalize()} (€)",
+                min_value=0,
+                step=10,
+                key=f"rk_{defekt}"
             )
+            st.session_state.reparaturkosten[defekt] = st.session_state[f"rk_{defekt}"]
+
+        new_name = st.text_input("💾 Konfiguration speichern als")
+        if new_name and st.button("💾 Speichern"):
+            save_config(new_name)
+            st.success(f"💾 '{new_name}' gespeichert")
 
 # 🔍 Suchformular
 with st.form("filters"):
