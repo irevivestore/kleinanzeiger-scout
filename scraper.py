@@ -3,7 +3,7 @@
 from playwright.sync_api import sync_playwright
 import re
 
-# Konfiguration
+# Bewertungsparameter
 VERKAUFSPREIS = 500
 WUNSCH_MARGE = 120
 REPARATURKOSTEN = {
@@ -16,18 +16,20 @@ REPARATURKOSTEN = {
     "face id": 80,
     "wasserschaden": 250,
     "kein bild": 80,
-    "defekt": 0,
+    "defekt": 0
 }
 
-def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False):
+def scrape_ads(modell, min_price=0, max_price=10000, nur_versand=False, debug=False):
     keyword = modell.replace(" ", "-").lower()
-    url = f"https://www.kleinanzeigen.de/s-{keyword}/k0"
+    url = f"https://www.kleinanzeigen.de/s-preis:{min_price}:{max_price}/{keyword}/k0"
+    if debug:
+        print(f"[DEBUG] URL: {url}")
+
     results = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
-        page = context.new_page()
+        page = browser.new_page()
 
         try:
             page.goto(url, timeout=60000)
@@ -36,74 +38,57 @@ def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False):
 
             for card in cards:
                 try:
-                    title = card.query_selector("h2").inner_text().strip()
-                    price_text = card.query_selector("p.aditem-main--middle--price-shipping--price")
-                    price_raw = price_text.inner_text().strip() if price_text else "0"
-                    price_clean = re.sub(r"[^\d]", "", price_raw)
-                    price = int(price_clean) if price_clean.isdigit() else 0
+                    title = card.query_selector("a.ellipsis").inner_text().strip()
+                    preis_element = card.query_selector("p.aditem-main--middle--price-shipping--price")
+                    preis_text = preis_element.inner_text().strip() if preis_element else "0"
+                    preis_clean = re.sub(r"[^\d,]", "", preis_text).replace(",", ".")
+                    preis = float(preis_clean) if preis_clean else 0.0
 
-                    if min_price and price < min_price:
-                        continue
-                    if max_price and price > max_price:
-                        continue
+                    beschreibung_element = card.query_selector("p.aditem-main--middle--description")
+                    beschreibung = beschreibung_element.inner_text().strip() if beschreibung_element else ""
 
-                    description = card.inner_text().lower()
-                    versand = any(w in description for w in ["versand", "versenden", "shipping"])
+                    versand = "versand" in card.inner_text().lower()
                     if nur_versand and not versand:
                         continue
 
-                    link_tag = card.query_selector("a.ellipsis")
-                    link = "https://www.kleinanzeigen.de" + link_tag.get_attribute("href") if link_tag else ""
+                    bild = card.query_selector("img")
+                    bild_url = bild.get_attribute("src") if bild else ""
+                    link = "https://www.kleinanzeigen.de" + card.query_selector("a.ellipsis").get_attribute("href")
 
-                    image_tag = card.query_selector("img")
-                    image = image_tag.get_attribute("src") if image_tag else ""
-
-                    # 💬 Vollständige Beschreibung von der Detailseite abrufen
-                    if link:
-                        try:
-                            detail_page = context.new_page()
-                            detail_page.goto(link, timeout=10000)
-                            detail_page.wait_for_selector("p[itemprop='description']", timeout=5000)
-                            beschreibung = detail_page.locator("p[itemprop='description']").inner_text().strip()
-                            detail_page.close()
-                        except:
-                            beschreibung = "❌ Konnte vollständige Beschreibung nicht laden"
-                    else:
-                        beschreibung = "Keine Beschreibung"
-
-                    # Bewertung berechnen
-                    reparaturkosten = 0
-                    max_ek = VERKAUFSPREIS - reparaturkosten - WUNSCH_MARGE
-
-                    if price <= max_ek:
-                        bewertung = "gruen"
-                    elif price <= VERKAUFSPREIS - reparaturkosten - (WUNSCH_MARGE * 0.9):
-                        bewertung = "blau"
-                    else:
-                        bewertung = "rot"
+                    # Standardbewertung
+                    defekte = []
+                    reparatur_summe = 0
+                    max_ek = VERKAUFSPREIS - reparatur_summe - WUNSCH_MARGE
+                    bewertung = (
+                        "gruen" if preis <= max_ek else
+                        "blau" if preis <= VERKAUFSPREIS - reparatur_summe - (WUNSCH_MARGE * 0.9) else
+                        "rot"
+                    )
 
                     results.append({
                         "title": title,
-                        "price": price,
-                        "link": link,
-                        "image": image,
-                        "versand": versand,
+                        "price": preis,
                         "beschreibung": beschreibung,
-                        "reparaturkosten": reparaturkosten,
+                        "versand": versand,
+                        "image": bild_url,
+                        "link": link,
+                        "reparaturkosten": reparatur_summe,
                         "max_ek": max_ek,
-                        "bewertung": bewertung,
+                        "bewertung": bewertung
                     })
 
                 except Exception as e:
-                    print(f"Fehler bei Anzeige: {str(e)}")
-                    continue
+                    if debug:
+                        print(f"[DEBUG] Fehler bei Anzeige: {e}")
 
         except Exception as e:
-            print(f"❌ Hauptfehler beim Laden der Seite: {str(e)}")
+            if debug:
+                print(f"[DEBUG] Fehler beim Seitenabruf: {e}")
+
         finally:
             browser.close()
 
     return results
 
-# Diese Konstanten werden von app.py importiert
+# Export der Konstanten für die App
 __all__ = ["scrape_ads", "REPARATURKOSTEN", "VERKAUFSPREIS", "WUNSCH_MARGE"]
