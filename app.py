@@ -1,17 +1,45 @@
 # app.py
 
 import streamlit as st
+import json
+import os
 from scraper import scrape_ads, REPARATURKOSTEN, VERKAUFSPREIS, WUNSCH_MARGE
 
 st.set_page_config(page_title="Kleinanzeigen Scout", layout="wide")
 st.title("📱 Kleinanzeigen Scout")
 st.markdown("Durchsuche Angebote und bewerte sie nach Reparaturbedarf")
 
+CONFIG_DIR = "configs"
+os.makedirs(CONFIG_DIR, exist_ok=True)
+
 if "anzeigen" not in st.session_state:
     st.session_state.anzeigen = []
 
-# Debug-Modus Toggle
-DEBUG = st.sidebar.checkbox("🔍 Debug-Modus aktivieren")
+if "konfig" not in st.session_state:
+    st.session_state.konfig = REPARATURKOSTEN.copy()
+
+# Konfiguration laden
+st.markdown("### ⚙️ Modell-Konfigurationen")
+with st.expander("🔧 Konfiguration anpassen oder laden"):
+    konfig_files = [f for f in os.listdir(CONFIG_DIR) if f.endswith(".json")]
+    col1, col2 = st.columns([3, 1])
+    selected_file = col1.selectbox("Modell-Konfiguration laden", ["- Keine -"] + konfig_files)
+    if col2.button("📂 Laden") and selected_file != "- Keine -":
+        with open(os.path.join(CONFIG_DIR, selected_file), "r") as f:
+            st.session_state.konfig = json.load(f)
+
+    st.markdown("#### Reparaturkosten anpassen:")
+    for defekt, kosten in st.session_state.konfig.items():
+        st.session_state.konfig[defekt] = st.number_input(
+            f"{defekt.capitalize()}", min_value=0, max_value=1000, step=5, value=kosten, key=f"kosten_{defekt}"
+        )
+
+    col3, col4 = st.columns([3, 1])
+    save_as = col3.text_input("Speichern als (Modellname)", value="iPhone 14 Pro")
+    if col4.button("💾 Speichern"):
+        with open(os.path.join(CONFIG_DIR, f"{save_as}.json"), "w") as f:
+            json.dump(st.session_state.konfig, f)
+        st.success(f"Konfiguration gespeichert unter: {save_as}.json")
 
 # Formular für die Suche
 with st.form("filters"):
@@ -24,7 +52,7 @@ with st.form("filters"):
 
 if submit:
     with st.spinner("Suche läuft..."):
-        st.session_state.anzeigen = scrape_ads(modell, min_preis, max_preis, nur_versand, debug=DEBUG)
+        st.session_state.anzeigen = scrape_ads(modell, min_preis, max_preis, nur_versand)
 
 anzeigen = st.session_state.anzeigen
 
@@ -59,12 +87,12 @@ else:
 
             st.markdown("**Defekte manuell auswählen (optional):**")
             manuelle_defekte = st.multiselect(
-                label="Defekte", options=list(REPARATURKOSTEN.keys()),
+                label="Defekte", options=list(st.session_state.konfig.keys()),
                 key=f"defekt_{idx}"
             )
 
             if manuelle_defekte:
-                neue_reparatur = sum(REPARATURKOSTEN[d] for d in manuelle_defekte)
+                neue_reparatur = sum(st.session_state.konfig[d] for d in manuelle_defekte)
                 neue_max_ek = VERKAUFSPREIS - neue_reparatur - WUNSCH_MARGE
                 neue_bewertung = (
                     "gruen" if anzeige['price'] <= neue_max_ek else
