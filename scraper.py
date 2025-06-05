@@ -3,7 +3,13 @@ import re
 from datetime import datetime
 import hashlib
 
-def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, debug=False, config=None):
+def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, debug=False, config=None, log=None):
+    def log_print(msg):
+        if log:
+            log(msg)
+        elif debug:
+            print(msg)
+
     keyword = modell.replace(" ", "-").lower()
     base_url = "https://www.kleinanzeigen.de"
     url = f"{base_url}/s-{keyword}/k0"
@@ -13,8 +19,7 @@ def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, debug=
 
     results = []
 
-    if debug:
-        print(f"🔍 Starte Scraping: {url}")
+    log_print(f"🔍 Starte Scraping: {url}")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -22,21 +27,16 @@ def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, debug=
         page = context.new_page()
 
         try:
-            if debug:
-                print("🌐 Lade Seite...")
+            log_print("🌐 Lade Seite...")
             page.goto(url, timeout=60000)
 
-            if debug:
-                print("✅ Seite geladen")
-
-            if debug:
-                print("⏳ Warte auf Anzeigen-Container...")
+            log_print("✅ Seite geladen")
+            log_print("⏳ Warte auf Anzeigen-Container...")
             page.wait_for_selector("article.aditem", timeout=30000)
 
             cards = page.query_selector_all("article.aditem")
 
-            if debug:
-                print(f"📦 Gefundene Anzeigen: {len(cards)}")
+            log_print(f"📦 Gefundene Anzeigen: {len(cards)}")
 
             for idx, card in enumerate(cards):
                 try:
@@ -50,16 +50,14 @@ def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, debug=
                         price = float(price_clean)
                     except ValueError:
                         price = 0.0
-                        if debug:
-                            print(f"⚠️ Preis-Parsing-Fehler bei Anzeige {idx}: '{raw_price}'")
+                        log_print(f"⚠️ Preis-Parsing-Fehler bei Anzeige {idx}: '{raw_price}'")
 
                     description_elem = card.query_selector("p.aditem-main--middle--description")
                     description = description_elem.inner_text().strip() if description_elem else ""
 
                     versand = "versand" in description.lower()
                     if nur_versand and not versand:
-                        if debug:
-                            print(f"ℹ️ Anzeige {idx} übersprungen, kein Versand")
+                        log_print(f"ℹ️ Anzeige {idx} übersprungen, kein Versand")
                         continue
 
                     image_elem = card.query_selector("img")
@@ -101,23 +99,18 @@ def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, debug=
                         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     })
 
-                    if debug:
-                        print(f"✅ Anzeige {idx} hinzugefügt: {title} | Preis: {price} € | Versand: {versand}")
+                    log_print(f"✅ Anzeige {idx} hinzugefügt: {title} | Preis: {price} € | Versand: {versand}")
 
                 except Exception as e:
-                    if debug:
-                        print(f"⚠️ Fehler bei Anzeige {idx}: {e}")
+                    log_print(f"⚠️ Fehler bei Anzeige {idx}: {e}")
 
         except Exception as e:
-            if debug:
-                print(f"❌ Hauptfehler beim Laden der Seite: {e}")
+            log_print(f"❌ Hauptfehler beim Laden der Seite: {e}")
 
         finally:
             browser.close()
-            if debug:
-                print("🛑 Browser geschlossen")
+            log_print("🛑 Browser geschlossen")
 
-    if debug:
-        print(f"✅ Scraping abgeschlossen – {len(results)} Ergebnisse")
+    log_print(f"✅ Scraping abgeschlossen – {len(results)} Ergebnisse")
 
     return results
