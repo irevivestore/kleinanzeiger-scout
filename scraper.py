@@ -1,78 +1,99 @@
 # scraper.py
-import asyncio
-from playwright.async_api import async_playwright
 
-async def scrape_ads(query, min_price, max_price, nur_versand=False, nur_angebote=True, debug=False):
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+from playwright.sync_api import sync_playwright
+import time
+from datetime import datetime
+import re
 
-        # Kategorie-Teil für URL
-        kategorie = "s-handy-telekom"
+def scrape_ads(modell, min_price=0, max_price=1500, nur_versand=False, nur_angebote=True, debug=False, config=None, log=None):
+    def dbg(msg):
+        if debug and log:
+            log(f"[scrape_ads] {msg}")
 
-        # Preisfilter
-        preisfilter = f"preis:{min_price}:{max_price}"
+    dbg(f"Starte Suche nach '{modell}' mit min_price={min_price}, max_price={max_price}, nur_versand={nur_versand}, nur_angebote={nur_angebote}")
 
-        # Angebotsfilter
-        angebotsfilter = "anzeige:angebote" if nur_angebote else ""
+    base_url = "https://www.kleinanzeigen.de"
+    kategorie_slug = "s-handy-telekom" if nur_versand else "s"
+    angebote_slug = "anzeige:angebote" if nur_angebote else ""
+    versand_suffix = "+handy_telekom.versand_s:ja" if nur_versand else ""
+    preis_filter = f"preis:{min_price}:{max_price}"
 
-        # Versandfilter (Teil von Kategorie-Parametern)
-        versandfilter = "+handy_telekom.versand_s:ja" if nur_versand else ""
+    url_parts = [base_url, kategorie_slug]
+    if angebote_slug:
+        url_parts.append(angebote_slug)
+    url_parts.append(preis_filter)
+    url_parts.append(modell.replace(" ", "-").lower())
+    url_parts.append(f"k0{'c173' if nur_versand else ''}{versand_suffix}")
 
-        # URL zusammenbauen
-        pfadteile = [teil for teil in [kategorie, angebotsfilter, preisfilter, query.replace(" ", "-"), "k0"] if teil]
-        url_pfad = "/".join(pfadteile)
-        url = f"https://www.kleinanzeigen.de/{url_pfad}{versandfilter}"
+    full_url = "/".join(part.strip("/") for part in url_parts if part)
+    dbg(f"URL: {full_url}")
 
-        if debug:
-            print(f"[scrape_ads] Starte Suche nach '{query}' mit min_price={min_price}, max_price={max_price}, nur_versand={nur_versand}, nur_angebote={nur_angebote}")
-            print(f"[scrape_ads] URL: {url}")
+    results = []
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
 
         try:
-            await page.goto(url, timeout=30000)
-            await page.wait_for_selector("li.ad-listitem", timeout=10000)
-            if debug:
-                print("[scrape_ads] Seite geladen, Anzeigen werden extrahiert...")
+            page.goto(full_url, timeout=15000)
+            page.wait_for_selector("li.ad-listitem", timeout=10000)
+            dbg("Seite geladen, Anzeigen werden extrahiert...")
         except Exception as e:
-            if debug:
-                print(f"[scrape_ads] Fehler beim Abruf der Seite: {e}")
-            await browser.close()
+            dbg(f"Fehler beim Abruf der Seite: {e}")
+            browser.close()
             return []
 
-        # Anzeigen parsen
-        anzeigenelemente = await page.query_selector_all("li.ad-listitem")
-        anzeigen = []
+        ad_elements = page.query_selector_all("li.ad-listitem")
+        dbg(f"{len(ad_elements)} Anzeigen gefunden.")
 
-        for element in anzeigenelemente:
+        for ad in ad_elements:
             try:
-                title_el = await element.query_selector("h2")
-                preis_el = await element.query_selector(".aditem-main--middle--price-shipping .aditem-main--middle--price")
-                link_el = await element.query_selector("a")
+                title_el = ad.query_selector("a.ellipsis")
+                title = title_el.inner_text().strip() if title_el else "Kein Titel"
+                link = title_el.get_attribute("href") if title_el else ""
+                link = base_url + link if link.startswith("/") else link
 
-                title = await title_el.inner_text() if title_el else "Kein Titel"
-                preis = await preis_el.inner_text() if preis_el else "Kein Preis"
-                link = await link_el.get_attribute("href") if link_el else None
-                if link and not link.startswith("http"):
-                    link = f"https://www.kleinanzeigen.de{link}"
+                image_el = ad.query_selector("img")
+                image = image_el.get_attribute("src") if image_el else ""
 
-                anzeigen.append({
-                    "titel": title.strip(),
-                    "preis": preis.strip(),
-                    "link": link.strip() if link else "Kein Link"
+                price_el = ad.query_selector("p.aditem-main--middle--price-shipping--price")
+                raw_price = price_el.inner_text().strip() if price_el else "0"
+                price = int(re.sub(r"[^\d]", "", raw_price)) if raw_price else 0
+
+                desc_el = ad.query_selector("p.aditem-main--middle--description")
+                beschreibung = desc_el.inner_text().strip() if desc_el else ""
+
+                versand = "versand" in beschreibung.lower()
+
+                # Bewertung der Anzeige basierend auf Konfiguration
+                reparatur_summe = 0
+                if config:
+                    for defekt, kosten in config["reparaturkosten"].items():
+                        if defekt.lower() in beschreibung.lower():
+                            reparatur_summe += kosten
+
+                    max_ek = config["verkaufspreis"] - config["wunsch_marge"] - reparatur_summe
+                else:
+                    max_ek = None
+
+                results.append({
+                    "title": title,
+                    "price": price,
+                    "image": image,
+                    "link": link,
+                    "beschreibung": beschreibung,
+                    "versand": versand,
+                    "reparaturkosten": reparatur_summe,
+                    "max_einkaufspreis": max_ek,
+                    "created_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat()
                 })
 
             except Exception as e:
-                if debug:
-                    print(f"[scrape_ads] Fehler beim Parsen einer Anzeige: {e}")
+                dbg(f"Fehler beim Parsen einer Anzeige: {e}")
                 continue
 
-        await browser.close()
+        browser.close()
 
-        if debug:
-            print(f"[scrape_ads] Fertig, {len(anzeigen)} Anzeigen zurückgegeben")
-
-        return anzeigen
-
-# Optional zum Testen
-# if __name__ == "__main__":
-#     asyncio.run(scrape_ads("iPhone 14 Pro", 0, 1500, nur_versand=True, nur_angebote=True, debug=True))
+    dbg(f"Fertig, {len(results)} Anzeigen zurückgegeben")
+    return results
