@@ -1,116 +1,128 @@
 from playwright.sync_api import sync_playwright
-import re
 from datetime import datetime
-import hashlib
+import re
 
-def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, debug=False, config=None, log=None):
-    def log_print(msg):
-        if log:
-            log(msg)
-        elif debug:
-            print(msg)
+def scrape_ads(
+    modell: str,
+    min_price: int = 0,
+    max_price: int = 1500,
+    nur_versand: bool = False,
+    debug: bool = False,
+    config: dict | None = None,
+    log=None
+):
+    def _log(msg):
+        if debug:
+            if log:
+                log(msg)
+            else:
+                print(msg)
 
-    keyword = modell.replace(" ", "-").lower()
-    base_url = "https://www.kleinanzeigen.de"
-    url = f"{base_url}/s-{keyword}/k0"
+    _log(f"[scrape_ads] Starte Suche nach '{modell}' mit min_price={min_price}, max_price={max_price}, nur_versand={nur_versand}")
 
-    if min_price is not None and max_price is not None:
-        url = f"{base_url}/s-preis:{int(min_price)}:{int(max_price)}/{keyword}/k0"
+    BASE_URL = "https://www.ebay-kleinanzeigen.de"
+    # URL passend zum Suchfilter bauen
+    url = (
+        f"{BASE_URL}/s-suchanfrage:angebote/{modell.replace(' ', '-')}/"
+        f"preis:{min_price}--{max_price}/"
+    )
+    if nur_versand:
+        url += "versand:1/"
+
+    _log(f"[scrape_ads] URL: {url}")
 
     results = []
 
-    log_print(f"🔍 Starte Scraping: {url}")
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
-        page = context.new_page()
+            page.goto(url)
+            _log(f"[scrape_ads] Seite geladen: {page.title()}")
 
-        try:
-            log_print("🌐 Lade Seite...")
-            page.goto(url, timeout=60000)
+            page.wait_for_selector("li.ad-listitem", timeout=10000)
+            ads = page.query_selector_all("li.ad-listitem")
+            _log(f"[scrape_ads] Gefundene Anzeigen: {len(ads)}")
 
-            log_print("✅ Seite geladen")
-            log_print("⏳ Warte auf Anzeigen-Container...")
-            page.wait_for_selector("article.aditem", timeout=30000)
-
-            cards = page.query_selector_all("article.aditem")
-
-            log_print(f"📦 Gefundene Anzeigen: {len(cards)}")
-
-            for idx, card in enumerate(cards):
+            for i, ad in enumerate(ads):
                 try:
-                    title_elem = card.query_selector("a.ellipsis")
-                    title = title_elem.inner_text().strip() if title_elem else "Kein Titel"
+                    title_el = ad.query_selector("a.ellipsis")
+                    title = title_el.inner_text().strip() if title_el else "Kein Titel"
 
-                    price_elem = card.query_selector("p.aditem-main--middle--price-shipping--price")
-                    raw_price = price_elem.inner_text().strip() if price_elem else "0"
-                    price_clean = re.sub(r"[^\d,.]", "", raw_price).replace(",", ".")
-                    try:
-                        price = float(price_clean)
-                    except ValueError:
-                        price = 0.0
-                        log_print(f"⚠️ Preis-Parsing-Fehler bei Anzeige {idx}: '{raw_price}'")
+                    link = title_el.get_attribute("href") if title_el else ""
+                    if link and not link.startswith("http"):
+                        link = BASE_URL + link
 
-                    description_elem = card.query_selector("p.aditem-main--middle--description")
-                    description = description_elem.inner_text().strip() if description_elem else ""
+                    price_el = ad.query_selector("p.aditem-main--middle--price")
+                    price_text = price_el.inner_text().strip() if price_el else "0 €"
+                    price = _parse_price(price_text)
 
-                    versand = "versand" in description.lower()
-                    if nur_versand and not versand:
-                        log_print(f"ℹ️ Anzeige {idx} übersprungen, kein Versand")
-                        continue
+                    image_el = ad.query_selector("img")
+                    image_url = image_el.get_attribute("src") if image_el else ""
 
-                    image_elem = card.query_selector("img")
-                    image = image_elem.get_attribute("src") if image_elem else ""
+                    versand = False
+                    versand_el = ad.query_selector("p.aditem-main--middle--shipping")
+                    if versand_el:
+                        versand = "Versand" in versand_el.inner_text()
 
-                    link_elem = card.query_selector("a.ellipsis")
-                    relative_link = link_elem.get_attribute("href") if link_elem else ""
-                    link = base_url + relative_link
+                    zeit_el = ad.query_selector("div.aditem-main--bottom--left")
+                    created_at = None
+                    if zeit_el:
+                        zeit_text = zeit_el.inner_text()
+                        created_at = _parse_date_from_text(zeit_text)
 
-                    anzeige_id = hashlib.md5(link.encode()).hexdigest()
+                    # Kurzbeschreibung wird nicht geladen, da auf Detailseite
 
-                    reparaturkosten = 0
-                    if config:
-                        for defekt, kosten in config.get("reparaturkosten", {}).items():
-                            if defekt in description.lower():
-                                reparaturkosten += kosten
+                    # Reparaturkosten schätzen mit config
+                    rep_kosten = 0
+                    if config and "reparaturkosten" in config:
+                        rep_kosten = _estimate_repair_costs("", config["reparaturkosten"])
 
-                    max_ek = 0
-                    bewertung = "rot"
-                    if config:
-                        max_ek = config.get("verkaufspreis", 0) - config.get("wunsch_marge", 0) - reparaturkosten
-                        if price <= max_ek:
-                            bewertung = "gruen"
-                        elif price <= config.get("verkaufspreis", 0) - reparaturkosten - (config.get("wunsch_marge", 0) * 0.9):
-                            bewertung = "blau"
-
-                    results.append({
-                        "id": anzeige_id,
+                    ad_data = {
                         "title": title,
-                        "price": price,
-                        "beschreibung": description,
-                        "versand": versand,
-                        "image": image,
                         "link": link,
-                        "reparaturkosten": reparaturkosten,
-                        "max_ek": max_ek,
-                        "bewertung": bewertung,
-                        "gefunden_am": datetime.now().strftime("%Y-%m-%d"),
-                        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    })
+                        "price": price,
+                        "image": image_url,
+                        "versand": versand,
+                        "created_at": created_at or "",
+                        "updated_at": "",
+                        "beschreibung": "",
+                        "reparaturkosten": rep_kosten,
+                    }
 
-                    log_print(f"✅ Anzeige {idx} hinzugefügt: {title} | Preis: {price} € | Versand: {versand}")
+                    _log(f"[scrape_ads] Anzeige {i+1}: {title} - {price}€ - Versand: {versand}")
+
+                    results.append(ad_data)
 
                 except Exception as e:
-                    log_print(f"⚠️ Fehler bei Anzeige {idx}: {e}")
+                    _log(f"[scrape_ads] Fehler bei Anzeige {i+1}: {e}")
 
-        except Exception as e:
-            log_print(f"❌ Hauptfehler beim Laden der Seite: {e}")
-
-        finally:
             browser.close()
-            log_print("🛑 Browser geschlossen")
+    except Exception as e:
+        _log(f"[scrape_ads] Fehler beim Abruf der Seite: {e}")
 
-    log_print(f"✅ Scraping abgeschlossen – {len(results)} Ergebnisse")
-
+    _log(f"[scrape_ads] Fertig, {len(results)} Anzeigen zurückgegeben")
     return results
+
+
+def _parse_price(text: str) -> int:
+    # Preis extrahieren z.B. "120 €" -> 120
+    match = re.search(r"(\d+)", text.replace(".", ""))
+    if match:
+        return int(match.group(1))
+    return 0
+
+def _parse_date_from_text(text: str) -> str:
+    # Einfacher Platzhalter: heutiges Datum
+    return datetime.now().strftime("%Y-%m-%d %H:%M")
+
+def _estimate_repair_costs(beschreibung: str, reparaturkosten_dict: dict) -> int:
+    # Sehr einfache Heuristik: keine Beschreibung, daher 0
+    # Kann bei Bedarf erweitert werden
+    kosten = 0
+    beschreibung_lower = beschreibung.lower()
+    for defekt, preis in reparaturkosten_dict.items():
+        if defekt.lower() in beschreibung_lower:
+            kosten += preis
+    return kosten
