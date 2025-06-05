@@ -55,13 +55,35 @@ with st.form("filters"):
     nur_versand = col3.checkbox("📦 Nur mit Versand")
     submit = st.form_submit_button("🔎 Anzeigen durchsuchen")
 
-# 🔎 Suche starten
+# --- Debug-Log-Bereich vorbereiten ---
+log_lines = []
+log_area = st.empty()
+
+def log(msg):
+    log_lines.append(msg)
+    # Zeige nur die letzten 50 Zeilen an, um das Textfeld nicht zu voll werden zu lassen
+    log_area.text_area("🛠 Debug-Ausgaben", value="\n".join(log_lines[-50:]), height=300)
+
+# 🔎 Suche starten mit Debug-Ausgabe
 if submit:
+    log_lines.clear()
     with st.spinner("Suche läuft..."):
-        neue_anzeigen = scrape_ads(modell, min_preis, max_preis, nur_versand)
-        print(f"[DEBUG] Speichere {len(neue_anzeigen)} neue Anzeigen in DB")
-        for anzeige in neue_anzeigen:
-            save_advert(anzeige)
+        neue_anzeigen = scrape_ads(
+            modell,
+            min_price=min_preis,
+            max_price=max_preis,
+            nur_versand=nur_versand,
+            debug=True,
+            config={
+                "verkaufspreis": verkaufspreis,
+                "wunsch_marge": wunsch_marge,
+                "reparaturkosten": reparaturkosten_dict,
+            },
+            log=log
+        )
+    st.success(f"{len(neue_anzeigen)} Anzeigen geladen und gespeichert.")
+    for anzeige in neue_anzeigen:
+        save_advert(anzeige)
 
 # 📄 Ergebnisse anzeigen
 alle_anzeigen = get_all_adverts_for_model(modell)
