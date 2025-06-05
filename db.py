@@ -85,6 +85,93 @@ def get_existing_advert(ad_id):
     result = c.fetchone()
     conn.close()
     return result
+# db.py
+
+import sqlite3
+import datetime
+
+DB_PATH = "config.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    # Anzeigen-Tabelle
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS anzeigen (
+            id TEXT PRIMARY KEY,
+            modell TEXT,
+            title TEXT,
+            price INTEGER,
+            link TEXT,
+            image TEXT,
+            versand INTEGER,
+            beschreibung TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    ''')
+
+    # Konfigurationstabelle
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS konfigurationen (
+            modell TEXT PRIMARY KEY,
+            verkaufspreis INTEGER,
+            wunsch_marge INTEGER,
+            reparaturkosten TEXT
+        )
+    ''')
+
+    conn.commit()
+    conn.close()
+
+
+def save_advert(ad):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    now = datetime.datetime.now().isoformat()
+
+    # Prüfen, ob Anzeige bereits vorhanden
+    c.execute("SELECT updated_at FROM anzeigen WHERE id = ?", (ad["id"],))
+    result = c.fetchone()
+
+    if result:
+        # Aktualisieren
+        c.execute('''
+            UPDATE anzeigen
+            SET price = ?, updated_at = ?
+            WHERE id = ?
+        ''', (ad["price"], now, ad["id"]))
+    else:
+        # Neu einfügen
+        c.execute('''
+            INSERT INTO anzeigen (id, modell, title, price, link, image, versand, beschreibung, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            ad["id"],
+            ad["modell"],
+            ad["title"],
+            ad["price"],
+            ad["link"],
+            ad["image"],
+            int(ad["versand"]),
+            ad["beschreibung"],
+            now,
+            now
+        ))
+
+    conn.commit()
+    conn.close()
+
+
+def get_existing_advert(ad_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM anzeigen WHERE id = ?", (ad_id,))
+    result = c.fetchone()
+    conn.close()
+    return result
 
 
 def save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict):
