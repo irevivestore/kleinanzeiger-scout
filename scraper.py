@@ -1,10 +1,7 @@
-# scraper.py
-
 import re
-import time
 from datetime import datetime
+from urllib.parse import quote
 from playwright.sync_api import sync_playwright
-
 
 def scrape_ads(
     modell,
@@ -16,90 +13,110 @@ def scrape_ads(
     config=None,
     log=print
 ):
+    if config is None:
+        config = {
+            "verkaufspreis": 0,
+            "wunsch_marge": 0,
+            "reparaturkosten": {}
+        }
+
     def debug_log(msg):
-        if debug:
+        if debug and log:
             log(f"[scrape_ads] {msg}")
 
-    debug_log(f"Starte Suche nach '{modell}' mit min_price={min_price}, max_price={max_price}, nur_versand={nur_versand}, nur_angebote={nur_angebote}")
+    # Basis-URL
+    base_url = "https://www.kleinanzeigen.de"
 
-    base_url = "https://www.kleinanzeigen.de/s-"
-    category = "handy-telekom"  # optional je nach Modelltyp anpassbar
+    # Kategorie (optional bei Versandfilter nötig)
+    kategorie = "handy-telekom" if nur_versand else ""
 
-    filters = []
+    # Query-Bestandteile
+    pfadteile = ["s"]
+    if kategorie:
+        pfadteile.append(f"-{kategorie}")
     if nur_angebote:
-        filters.append("anzeige:angebote")
-    if min_price is not None and max_price is not None:
-        filters.append(f"preis:{min_price}:{max_price}")
+        pfadteile.append("anzeige:angebote")
+    pfadteile.append(f"preis:{min_price}:{max_price}")
+    pfadteile.append(quote(modell))
+    pfadteile.append("k0")
 
-    filter_part = "/".join(filters)
-    search_term = modell.replace(" ", "-").lower()
-    url = f"{base_url}{category}/{filter_part}/{search_term}/k0"
+    url = f"{base_url}/{'/'.join(pfadteile)}"
+    if nur_versand:
+        url += "c173+handy_telekom.versand_s:ja"
 
+    debug_log(f"Starte Suche nach '{modell}' mit min_price={min_price}, max_price={max_price}, nur_versand={nur_versand}, nur_angebote={nur_angebote}")
     debug_log(f"URL: {url}")
 
-    results = []
+    anzeigen = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto(url)
-        time.sleep(3)
+        page.goto(url, timeout=60000)
+        page.wait_for_timeout(3000)
 
-        debug_log("Seite geladen, Anzeigen werden extrahiert...")
+        items = page.query_selector_all("article.aditem")
+        debug_log(f"{len(items)} Anzeigen gefunden.")
 
-        ads = page.query_selector_all("article.aditem")
-        debug_log(f"{len(ads)} Anzeigen gefunden.")
-
-        for ad in ads:
+        for item in items:
             try:
-                title_el = ad.query_selector("a.aditem-main--title")
-                price_el = ad.query_selector(".aditem-main--middle--price-shipping--price")
-                image_el = ad.query_selector("img")
-                link_el = ad.query_selector("a.aditem-main--title")
-                desc_el = ad.query_selector(".aditem-main--middle")
+                link_el = item.query_selector("a")
+                if not link_el:
+                    continue
+                link = link_el.get_attribute("href")
+                if not link or not link.startswith("/s-anzeige/"):
+                    continue
+                full_url = base_url + link
 
-                title = title_el.inner_text().strip()
-                price_str = price_el.inner_text().strip().replace("€", "").replace(".", "").replace("VB", "").strip()
-                price = int(re.sub(r"[^\d]", "", price_str)) if price_str else 0
-                image = image_el.get_attribute("src") if image_el else ""
-                link = "https://www.kleinanzeigen.de" + link_el.get_attribute("href")
-                beschreibung = desc_el.inner_text().strip() if desc_el else ""
-
-                versand = "versand" in beschreibung.lower()
-
-                # ID aus Link extrahieren
-                match = re.search(r"/(\d+)-", link)
+                # ID extrahieren aus der URL
+                match = re.search(r"/s-anzeige/.*?/(\d+)", link)
                 ad_id = match.group(1) if match else None
+                if not ad_id:
+                    continue
 
-                # Bewertung durchführen
-                reparatur_summe = 0
-                if config:
-                    for defekt, kosten in config["reparaturkosten"].items():
-                        if defekt.lower() in beschreibung.lower():
-                            reparatur_summe += kosten
+                title_el = item.query_selector("a h2")
+                title = title_el.inner_text().strip() if title_el else "Unbekannter Titel"
 
-                    max_ek = config["verkaufspreis"] - config["wunsch_marge"] - reparatur_summe
+                preis_el = item.query_selector(".aditem-main--middle .aditem-main--middle--price")
+                preis_text = preis_el.inner_text().strip().replace("€", "").replace(".", "").replace(",", "").strip() if preis_el else ""
+                try:
+                    price = int(re.findall(r"\d+", preis_text)[0])
+                except (IndexError, ValueError):
+                    price = 0
+
+                image_el = item.query_selector("img")
+                image_url = image_el.get_attribute("src") if image_el else ""
+
+                # Bewertung
+                reparaturkosten = 0  # Wird standardmäßig auf 0 gesetzt
+                max_einkaufspreis = config["verkaufspreis"] - config["wunsch_marge"] - reparaturkosten
+
+                if price <= max_einkaufspreis:
+                    farbe = "grün"
+                elif price <= max_einkaufspreis + (config["wunsch_marge"] * 0.1):
+                    farbe = "blau"
                 else:
-                    max_ek = 0
+                    farbe = "rot"
 
-                results.append({
+                anzeigen.append({
                     "id": ad_id,
                     "title": title,
                     "price": price,
-                    "image": image,
-                    "link": link,
-                    "beschreibung": beschreibung,
-                    "versand": versand,
-                    "reparaturkosten": reparatur_summe,
-                    "max_einkaufspreis": max_ek,
-                    "created_at": datetime.utcnow().isoformat(),
-                    "updated_at": datetime.utcnow().isoformat()
+                    "link": full_url,
+                    "image": image_url,
+                    "beschreibung": "",  # Wird ggf. später ergänzt
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat(),
+                    "versand": nur_versand,
+                    "reparaturkosten": reparaturkosten,
+                    "bewertung": farbe,
                 })
 
             except Exception as e:
                 debug_log(f"Fehler beim Parsen einer Anzeige: {e}")
+                continue
 
         browser.close()
 
-    debug_log(f"Fertig, {len(results)} Anzeigen zurückgegeben")
-    return results
+    debug_log(f"Fertig, {len(anzeigen)} Anzeigen zurückgegeben")
+    return anzeigen
