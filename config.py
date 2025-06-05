@@ -1,5 +1,6 @@
 # config.py
 
+# Standard-Werte, wenn keine Konfiguration für das Modell gespeichert ist
 REPARATURKOSTEN_DEFAULT = {
     "display": 80,
     "akku": 30,
@@ -10,8 +11,8 @@ REPARATURKOSTEN_DEFAULT = {
     "face id": 80,
     "wasserschaden": 250,
     "kein bild": 80,
-    "defekt": 0  # Allgemeiner Platzhalter
+    "defekt": 0  # allgemeiner Hinweis
 }
 
-VERKAUFSPREIS_DEFAULT = 500
-WUNSCH_MARGE_DEFAULT = 120
+VERKAUFSPREIS_DEFAULT = 500  # Standard-Wert für Verkaufspreis
+WUNSCH_MARGE_DEFAULT = 120   # Standard-Wert für Marge in €
