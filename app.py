@@ -47,12 +47,13 @@ with st.expander("⚙️ Erweiterte Bewertungsparameter"):
         save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict)
         st.success("✅ Konfiguration gespeichert")
 
-# 📋 Suchparameter
+# 📋 Suchparameter mit neuem Filter "Nur Angebote"
 with st.form("filters"):
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     min_preis = col1.number_input("💶 Mindestpreis", min_value=0, value=0)
     max_preis = col2.number_input("💶 Maximalpreis", min_value=0, value=1500)
     nur_versand = col3.checkbox("📦 Nur mit Versand")
+    nur_angebote = col4.checkbox("📢 Nur Angebote", value=True)  # NEU
     submit = st.form_submit_button("🔎 Anzeigen durchsuchen")
 
 # --- Debug-Log-Bereich vorbereiten ---
@@ -61,7 +62,6 @@ log_area = st.empty()
 
 def log(msg):
     log_lines.append(msg)
-    # Zeige nur die letzten 50 Zeilen an, um das Textfeld nicht zu voll werden zu lassen
     log_area.text_area("🛠 Debug-Ausgaben", value="\n".join(log_lines[-50:]), height=300)
 
 # 🔎 Suche starten mit Debug-Ausgabe
@@ -73,6 +73,7 @@ if submit:
             min_price=min_preis,
             max_price=max_preis,
             nur_versand=nur_versand,
+            nur_angebote=nur_angebote,  # NEU
             debug=True,
             config={
                 "verkaufspreis": verkaufspreis,
