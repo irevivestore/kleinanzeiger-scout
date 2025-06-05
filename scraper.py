@@ -5,14 +5,15 @@ from datetime import datetime
 def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, config=None, debug=False):
     keyword = modell.replace(" ", "-").lower()
     url = f"https://www.kleinanzeigen.de/s-{keyword}/k0"
+    debug_logs = []
 
     if min_price is not None and max_price is not None:
         url = f"https://www.kleinanzeigen.de/s-preis:{int(min_price)}:{int(max_price)}/{keyword}/k0"
 
-    results = []
-
     if debug:
-        print(f"🔍 Starte Scraping: {url}")
+        debug_logs.append(f"🔍 Starte Scraping: {url}")
+
+    results = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -22,12 +23,12 @@ def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, config
         try:
             page.goto(url, timeout=60000)
             if debug:
-                print("✅ Seite geladen")
+                debug_logs.append("✅ Seite geladen")
 
             page.wait_for_selector("article.aditem", timeout=15000)
             cards = page.query_selector_all("article.aditem")
             if debug:
-                print(f"📦 Gefundene Anzeigen insgesamt: {len(cards)}")
+                debug_logs.append(f"📦 Gefundene Anzeigen insgesamt: {len(cards)}")
 
             for idx, card in enumerate(cards):
                 try:
@@ -47,7 +48,7 @@ def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, config
                         price = float(price_clean)
                     except ValueError:
                         if debug:
-                            print(f"⚠️ Preis-Parsing-Fehler bei '{raw_price}'")
+                            debug_logs.append(f"⚠️ Preis-Parsing-Fehler bei '{raw_price}'")
                         continue
 
                     description_elem = card.query_selector("p.aditem-main--middle--description")
@@ -96,16 +97,16 @@ def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, config
 
                 except Exception as e:
                     if debug:
-                        print(f"⚠️ Fehler bei Anzeige {idx}: {str(e)}")
+                        debug_logs.append(f"⚠️ Fehler bei Anzeige {idx}: {str(e)}")
                     continue
 
         except Exception as e:
             if debug:
-                print(f"❌ Fehler beim Laden der Seite: {str(e)}")
+                debug_logs.append(f"❌ Fehler beim Laden der Seite: {str(e)}")
         finally:
             browser.close()
 
     if debug:
-        print(f"✅ Scraping abgeschlossen – {len(results)} gültige Ergebnisse")
+        debug_logs.append(f"✅ Scraping abgeschlossen – {len(results)} gültige Ergebnisse")
 
-    return results
+    return results, debug_logs
