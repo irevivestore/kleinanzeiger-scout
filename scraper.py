@@ -22,12 +22,19 @@ def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, debug=
         page = context.new_page()
 
         try:
+            if debug:
+                print("🌐 Lade Seite...")
             page.goto(url, timeout=60000)
+
             if debug:
                 print("✅ Seite geladen")
 
-            page.wait_for_selector("article.aditem", timeout=15000)
+            if debug:
+                print("⏳ Warte auf Anzeigen-Container...")
+            page.wait_for_selector("article.aditem", timeout=30000)
+
             cards = page.query_selector_all("article.aditem")
+
             if debug:
                 print(f"📦 Gefundene Anzeigen: {len(cards)}")
 
@@ -44,13 +51,15 @@ def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, debug=
                     except ValueError:
                         price = 0.0
                         if debug:
-                            print(f"⚠️ Preis-Parsing-Fehler: {raw_price}")
+                            print(f"⚠️ Preis-Parsing-Fehler bei Anzeige {idx}: '{raw_price}'")
 
                     description_elem = card.query_selector("p.aditem-main--middle--description")
                     description = description_elem.inner_text().strip() if description_elem else ""
 
                     versand = "versand" in description.lower()
                     if nur_versand and not versand:
+                        if debug:
+                            print(f"ℹ️ Anzeige {idx} übersprungen, kein Versand")
                         continue
 
                     image_elem = card.query_selector("img")
@@ -64,17 +73,18 @@ def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, debug=
 
                     reparaturkosten = 0
                     if config:
-                        for defekt, kosten in config["reparaturkosten"].items():
+                        for defekt, kosten in config.get("reparaturkosten", {}).items():
                             if defekt in description.lower():
                                 reparaturkosten += kosten
 
-                    max_ek = config["verkaufspreis"] - config["wunsch_marge"] - reparaturkosten
-
-                    bewertung = (
-                        "gruen" if price <= max_ek else
-                        "blau" if price <= config["verkaufspreis"] - reparaturkosten - (config["wunsch_marge"] * 0.9)
-                        else "rot"
-                    )
+                    max_ek = 0
+                    bewertung = "rot"
+                    if config:
+                        max_ek = config.get("verkaufspreis", 0) - config.get("wunsch_marge", 0) - reparaturkosten
+                        if price <= max_ek:
+                            bewertung = "gruen"
+                        elif price <= config.get("verkaufspreis", 0) - reparaturkosten - (config.get("wunsch_marge", 0) * 0.9):
+                            bewertung = "blau"
 
                     results.append({
                         "id": anzeige_id,
@@ -91,6 +101,9 @@ def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, debug=
                         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     })
 
+                    if debug:
+                        print(f"✅ Anzeige {idx} hinzugefügt: {title} | Preis: {price} € | Versand: {versand}")
+
                 except Exception as e:
                     if debug:
                         print(f"⚠️ Fehler bei Anzeige {idx}: {e}")
@@ -101,7 +114,10 @@ def scrape_ads(modell, min_price=None, max_price=None, nur_versand=False, debug=
 
         finally:
             browser.close()
+            if debug:
+                print("🛑 Browser geschlossen")
 
     if debug:
         print(f"✅ Scraping abgeschlossen – {len(results)} Ergebnisse")
+
     return results
