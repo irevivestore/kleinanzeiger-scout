@@ -1,76 +1,78 @@
+# scraper.py
 import asyncio
 from playwright.async_api import async_playwright
-import re
 
-async def scrape_ads(suchbegriff, min_price, max_price, nur_versand=False, nur_angebote=False):
-    print(f"[scrape_ads] Starte Suche nach '{suchbegriff}' mit min_price={min_price}, max_price={max_price}, nur_versand={nur_versand}, nur_angebote={nur_angebote}")
-
-    # Basiskomponenten der URL
-    base = "https://www.kleinanzeigen.de"
-    kategorie = "s-handy-telekom"
-    preisfilter = f"preis:{min_price}:{max_price}"
-    angebotfilter = "anzeige:angebote" if nur_angebote else ""
-    versandfilter = "+handy_telekom.versand_s:ja" if nur_versand else ""
-
-    # Baue URL
-    filter_parts = "/".join(filter(None, [angebotfilter, preisfilter, suchbegriff]))
-    url = f"{base}/{kategorie}/{filter_parts}/k0c173{versandfilter}"
-
-    print(f"[scrape_ads] URL: {url}")
-
+async def scrape_ads(query, min_price, max_price, nur_versand=False, nur_angebote=True, debug=False):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
 
+        # Kategorie-Teil für URL
+        kategorie = "s-handy-telekom"
+
+        # Preisfilter
+        preisfilter = f"preis:{min_price}:{max_price}"
+
+        # Angebotsfilter
+        angebotsfilter = "anzeige:angebote" if nur_angebote else ""
+
+        # Versandfilter (Teil von Kategorie-Parametern)
+        versandfilter = "+handy_telekom.versand_s:ja" if nur_versand else ""
+
+        # URL zusammenbauen
+        pfadteile = [teil for teil in [kategorie, angebotsfilter, preisfilter, query.replace(" ", "-"), "k0"] if teil]
+        url_pfad = "/".join(pfadteile)
+        url = f"https://www.kleinanzeigen.de/{url_pfad}{versandfilter}"
+
+        if debug:
+            print(f"[scrape_ads] Starte Suche nach '{query}' mit min_price={min_price}, max_price={max_price}, nur_versand={nur_versand}, nur_angebote={nur_angebote}")
+            print(f"[scrape_ads] URL: {url}")
+
         try:
-            await page.goto(url)
+            await page.goto(url, timeout=30000)
             await page.wait_for_selector("li.ad-listitem", timeout=10000)
-            print("[scrape_ads] Seite geladen, Anzeigen werden extrahiert...")
-
-            ads = await page.locator("li.ad-listitem").all()
-            print(f"[scrape_ads] {len(ads)} Anzeigen gefunden.")
-
-            results = []
-            for ad in ads:
-                try:
-                    # Titel
-                    title_el = ad.locator(".ad-listitem-main--title")
-                    title = await title_el.inner_text() if await title_el.count() > 0 else None
-
-                    # Preis
-                    price_el = ad.locator(".aditem-main--middle--price-shipping .aditem-main--middle--price")
-                    price_text = await price_el.inner_text() if await price_el.count() > 0 else None
-                    price_match = re.search(r"(\d{1,3}(?:\.\d{3})*|\d+)", price_text.replace(".", "").replace("€", "")) if price_text else None
-                    price = int(price_match.group().replace(".", "")) if price_match else None
-
-                    # Ort
-                    ort_el = ad.locator(".aditem-main--bottom--left")
-                    ort = await ort_el.inner_text() if await ort_el.count() > 0 else "Unbekannt"
-
-                    # Link
-                    link_el = ad.locator("a.ad-listitem")
-                    relative_url = await link_el.get_attribute("href") if await link_el.count() > 0 else None
-                    full_url = base + relative_url if relative_url else None
-
-                    if not all([title, price, full_url]):
-                        continue  # unvollständige Anzeige überspringen
-
-                    results.append({
-                        "titel": title.strip(),
-                        "preis": price,
-                        "ort": ort.strip(),
-                        "url": full_url,
-                    })
-
-                except Exception as e:
-                    print(f"[scrape_ads] Fehler beim Parsen einer Anzeige: {e}")
-                    continue
-
+            if debug:
+                print("[scrape_ads] Seite geladen, Anzeigen werden extrahiert...")
         except Exception as e:
-            print(f"[scrape_ads] Fehler beim Abruf der Seite: {e}")
-            results = []
+            if debug:
+                print(f"[scrape_ads] Fehler beim Abruf der Seite: {e}")
+            await browser.close()
+            return []
+
+        # Anzeigen parsen
+        anzeigenelemente = await page.query_selector_all("li.ad-listitem")
+        anzeigen = []
+
+        for element in anzeigenelemente:
+            try:
+                title_el = await element.query_selector("h2")
+                preis_el = await element.query_selector(".aditem-main--middle--price-shipping .aditem-main--middle--price")
+                link_el = await element.query_selector("a")
+
+                title = await title_el.inner_text() if title_el else "Kein Titel"
+                preis = await preis_el.inner_text() if preis_el else "Kein Preis"
+                link = await link_el.get_attribute("href") if link_el else None
+                if link and not link.startswith("http"):
+                    link = f"https://www.kleinanzeigen.de{link}"
+
+                anzeigen.append({
+                    "titel": title.strip(),
+                    "preis": preis.strip(),
+                    "link": link.strip() if link else "Kein Link"
+                })
+
+            except Exception as e:
+                if debug:
+                    print(f"[scrape_ads] Fehler beim Parsen einer Anzeige: {e}")
+                continue
 
         await browser.close()
 
-    print(f"[scrape_ads] Fertig, {len(results)} Anzeigen zurückgegeben")
-    return results
+        if debug:
+            print(f"[scrape_ads] Fertig, {len(anzeigen)} Anzeigen zurückgegeben")
+
+        return anzeigen
+
+# Optional zum Testen
+# if __name__ == "__main__":
+#     asyncio.run(scrape_ads("iPhone 14 Pro", 0, 1500, nur_versand=True, nur_angebote=True, debug=True))
