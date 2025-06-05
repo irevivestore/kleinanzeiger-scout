@@ -19,14 +19,14 @@ def scrape_ads(modell, min_price=0, max_price=1500, nur_versand=False, nur_angeb
 
         pfadteile.append(f"preis:{min_price}:{max_price}")
         pfadteile.append(suchbegriff)
-        pfadteile.append("k0")  # Kategorie Handy & Telekom
+        pfadteile.append("k0")
 
         url = f"{base_url}/{'/'.join(pfadteile)}"
         log(f"[scrape_ads] Starte Suche nach '{modell}' mit min_price={min_price}, max_price={max_price}, nur_versand={nur_versand}, nur_angebote={nur_angebote}")
         log(f"[scrape_ads] URL: {url}")
 
         page.goto(url)
-        page.wait_for_selector("article.aditem")
+        page.wait_for_selector("article.aditem", timeout=10000)
 
         anzeigenelemente = page.query_selector_all("article.aditem")
         log(f"[scrape_ads] {len(anzeigenelemente)} Anzeigen gefunden.")
@@ -37,15 +37,23 @@ def scrape_ads(modell, min_price=0, max_price=1500, nur_versand=False, nur_angeb
                 link_element = ad.query_selector("a")
                 if not link_element:
                     continue
-                href = link_element.get_attribute("href")
-                ad_id = re.search(r"/s-anzeige/[^/]+/(\d+)", href)
-                if not ad_id:
-                    continue
-                ad_id = ad_id.group(1)
 
-                title = ad.query_selector(".text-module-begin h2").inner_text().strip()
-                price_text = ad.query_selector(".aditem-main--middle .aditem-main--middle--price-shipping").inner_text()
-                price = int(re.sub(r"[^\d]", "", price_text))
+                href = link_element.get_attribute("href")
+                ad_id_match = re.search(r"/s-anzeige/[^/]+/(\d+)", href or "")
+                if not ad_id_match:
+                    continue
+                ad_id = ad_id_match.group(1)
+
+                # Titel sicher abfragen
+                title_element = ad.query_selector(".text-module-begin h2")
+                title = title_element.inner_text().strip() if title_element else "Unbekannter Titel"
+
+                # Preis sicher abfragen
+                price_element = ad.query_selector(".aditem-main--middle .aditem-main--middle--price-shipping")
+                if not price_element:
+                    continue  # ohne Preis nicht sinnvoll
+                price_text = price_element.inner_text()
+                price = int(re.sub(r"[^\d]", "", price_text)) if price_text else 0
 
                 image_el = ad.query_selector("img")
                 image_url = image_el.get_attribute("src") if image_el else ""
@@ -78,7 +86,7 @@ def scrape_ads(modell, min_price=0, max_price=1500, nur_versand=False, nur_angeb
                     "versand": nur_versand,
                     "reparaturkosten": reparaturkosten,
                     "bewertung": farbe,
-                    "modell": modell  # <-- Wichtig: Modell-Feld ergänzt
+                    "modell": modell
                 })
 
             except Exception as e:
