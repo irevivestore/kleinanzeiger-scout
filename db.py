@@ -1,212 +1,123 @@
-# db.py
-
 import sqlite3
-import datetime
+import json
+from datetime import datetime
 
-DB_PATH = "config.db"
+DB_PATH = "datenbank.db"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # Anzeigen-Tabelle
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS anzeigen (
-            id TEXT PRIMARY KEY,
-            modell TEXT,
-            title TEXT,
-            price INTEGER,
-            link TEXT,
-            image TEXT,
-            versand INTEGER,
-            beschreibung TEXT,
-            created_at TEXT,
-            updated_at TEXT
-        )
-    ''')
+    # Tabelle für Anzeigen
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS anzeigen (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        modell TEXT,
+        title TEXT,
+        price INTEGER,
+        link TEXT UNIQUE,
+        image TEXT,
+        versand BOOLEAN,
+        beschreibung TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
 
-    # Konfigurationstabelle
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS konfigurationen (
-            modell TEXT PRIMARY KEY,
-            verkaufspreis INTEGER,
-            wunsch_marge INTEGER,
-            reparaturkosten TEXT
-        )
-    ''')
+    # Tabelle für Konfiguration
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS config (
+        modell TEXT PRIMARY KEY,
+        verkaufspreis INTEGER,
+        wunsch_marge INTEGER,
+        reparaturkosten TEXT -- JSON
+    )
+    """)
 
     conn.commit()
     conn.close()
-
 
 def save_advert(ad):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    now = datetime.datetime.now().isoformat()
+    c.execute("SELECT id FROM anzeigen WHERE link = ?", (ad["link"],))
+    existing = c.fetchone()
 
-    # Prüfen, ob Anzeige bereits vorhanden
-    c.execute("SELECT updated_at FROM anzeigen WHERE id = ?", (ad["id"],))
-    result = c.fetchone()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    if result:
-        # Aktualisieren
-        c.execute('''
+    if existing:
+        c.execute("""
             UPDATE anzeigen
-            SET price = ?, updated_at = ?
-            WHERE id = ?
-        ''', (ad["price"], now, ad["id"]))
+            SET title = ?, price = ?, image = ?, versand = ?, beschreibung = ?, updated_at = ?
+            WHERE link = ?
+        """, (
+            ad["title"], ad["price"], ad["image"], ad["versand"], ad["beschreibung"], now, ad["link"]
+        ))
     else:
-        # Neu einfügen
-        c.execute('''
-            INSERT INTO anzeigen (id, modell, title, price, link, image, versand, beschreibung, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            ad["id"],
-            ad["modell"],
-            ad["title"],
-            ad["price"],
-            ad["link"],
-            ad["image"],
-            int(ad["versand"]),
-            ad["beschreibung"],
-            now,
-            now
+        c.execute("""
+            INSERT INTO anzeigen (
+                modell, title, price, link, image, versand, beschreibung, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            ad["modell"], ad["title"], ad["price"], ad["link"],
+            ad["image"], ad["versand"], ad["beschreibung"], now, now
         ))
 
     conn.commit()
     conn.close()
 
-
-def get_existing_advert(ad_id):
+def get_existing_advert(modell):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT * FROM anzeigen WHERE id = ?", (ad_id,))
-    result = c.fetchone()
-    conn.close()
-    return result
-# db.py
-
-import sqlite3
-import datetime
-
-DB_PATH = "config.db"
-
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-
-    # Anzeigen-Tabelle
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS anzeigen (
-            id TEXT PRIMARY KEY,
-            modell TEXT,
-            title TEXT,
-            price INTEGER,
-            link TEXT,
-            image TEXT,
-            versand INTEGER,
-            beschreibung TEXT,
-            created_at TEXT,
-            updated_at TEXT
-        )
-    ''')
-
-    # Konfigurationstabelle
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS konfigurationen (
-            modell TEXT PRIMARY KEY,
-            verkaufspreis INTEGER,
-            wunsch_marge INTEGER,
-            reparaturkosten TEXT
-        )
-    ''')
-
-    conn.commit()
+    c.execute("SELECT * FROM anzeigen WHERE modell = ?", (modell,))
+    rows = c.fetchall()
     conn.close()
 
+    keys = ["id", "modell", "title", "price", "link", "image", "versand", "beschreibung", "created_at", "updated_at"]
+    return [dict(zip(keys, row)) for row in rows]
 
-def save_advert(ad):
+def get_all_ads_for_model(modell):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    c.execute("SELECT * FROM anzeigen WHERE modell = ?", (modell,))
+    rows = c.fetchall()
+    conn.close()
 
-    now = datetime.datetime.now().isoformat()
+    keys = ["id", "modell", "title", "price", "link", "image", "versand", "beschreibung", "created_at", "updated_at"]
+    return [dict(zip(keys, row)) for row in rows]
 
-    # Prüfen, ob Anzeige bereits vorhanden
-    c.execute("SELECT updated_at FROM anzeigen WHERE id = ?", (ad["id"],))
-    result = c.fetchone()
+def load_config(modell):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT verkaufspreis, wunsch_marge, reparaturkosten FROM config WHERE modell = ?", (modell,))
+    row = c.fetchone()
+    conn.close()
 
-    if result:
-        # Aktualisieren
-        c.execute('''
-            UPDATE anzeigen
-            SET price = ?, updated_at = ?
-            WHERE id = ?
-        ''', (ad["price"], now, ad["id"]))
+    if row:
+        verkaufspreis, wunsch_marge, reparaturkosten_json = row
+        return {
+            "verkaufspreis": verkaufspreis,
+            "wunsch_marge": wunsch_marge,
+            "reparaturkosten": json.loads(reparaturkosten_json)
+        }
     else:
-        # Neu einfügen
-        c.execute('''
-            INSERT INTO anzeigen (id, modell, title, price, link, image, versand, beschreibung, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            ad["id"],
-            ad["modell"],
-            ad["title"],
-            ad["price"],
-            ad["link"],
-            ad["image"],
-            int(ad["versand"]),
-            ad["beschreibung"],
-            now,
-            now
-        ))
-
-    conn.commit()
-    conn.close()
-
-
-def get_existing_advert(ad_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT * FROM anzeigen WHERE id = ?", (ad_id,))
-    result = c.fetchone()
-    conn.close()
-    return result
-
+        return None
 
 def save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # Dictionary als String speichern
-    rep_string = repr(reparaturkosten_dict)
+    json_str = json.dumps(reparaturkosten_dict)
 
-    c.execute('''
-        INSERT OR REPLACE INTO konfigurationen (modell, verkaufspreis, wunsch_marge, reparaturkosten)
+    c.execute("""
+        INSERT INTO config (modell, verkaufspreis, wunsch_marge, reparaturkosten)
         VALUES (?, ?, ?, ?)
-    ''', (modell, verkaufspreis, wunsch_marge, rep_string))
+        ON CONFLICT(modell) DO UPDATE SET
+            verkaufspreis = excluded.verkaufspreis,
+            wunsch_marge = excluded.wunsch_marge,
+            reparaturkosten = excluded.reparaturkosten
+    """, (modell, verkaufspreis, wunsch_marge, json_str))
 
     conn.commit()
     conn.close()
-
-
-def load_config(modell):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT verkaufspreis, wunsch_marge, reparaturkosten FROM konfigurationen WHERE modell = ?", (modell,))
-    row = c.fetchone()
-    conn.close()
-
-    if row:
-        verkaufspreis, wunsch_marge, rep_string = row
-        try:
-            reparaturkosten = eval(rep_string)
-        except:
-            reparaturkosten = {}
-        return {
-            "verkaufspreis": verkaufspreis,
-            "wunsch_marge": wunsch_marge,
-            "reparaturkosten": reparaturkosten
-        }
-    else:
-        return None
