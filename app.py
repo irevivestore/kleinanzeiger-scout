@@ -1,5 +1,3 @@
-# app.py
-
 import streamlit as st
 from scraper import scrape_ads
 from db import (
@@ -61,6 +59,7 @@ with st.form("filters"):
 if submit:
     with st.spinner("Suche läuft..."):
         neue_anzeigen = scrape_ads(modell, min_preis, max_preis, nur_versand)
+        print(f"[DEBUG] Speichere {len(neue_anzeigen)} neue Anzeigen in DB")
         for anzeige in neue_anzeigen:
             save_advert(anzeige)
 
