@@ -1,128 +1,154 @@
-from playwright.sync_api import sync_playwright
-from datetime import datetime
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import re
+import time
 
 def scrape_ads(
-    modell: str,
-    min_price: int = 0,
-    max_price: int = 1500,
-    nur_versand: bool = False,
-    debug: bool = False,
-    config: dict | None = None,
+    modell,
+    min_price=0,
+    max_price=1500,
+    nur_versand=False,
+    debug=False,
+    config=None,
     log=None
 ):
+    """
+    Scrape Kleinanzeigen based on parameters.
+
+    Args:
+        modell (str): Modellbezeichnung (z.B. 'iPhone 14 Pro')
+        min_price (int): Mindestpreis
+        max_price (int): Maximalpreis
+        nur_versand (bool): Nur Angebote mit Versand
+        debug (bool): Debug-Ausgaben aktivieren
+        config (dict): Bewertungskonfiguration (optional)
+        log (callable): Funktion zum Loggen von Debug-Text (optional)
+
+    Returns:
+        list of dict: Gefundene Anzeigen
+    """
     def _log(msg):
         if debug:
+            prefix = "[scrape_ads]"
+            message = f"{prefix} {msg}"
             if log:
-                log(msg)
+                log(message)
             else:
-                print(msg)
+                print(message)
 
-    _log(f"[scrape_ads] Starte Suche nach '{modell}' mit min_price={min_price}, max_price={max_price}, nur_versand={nur_versand}")
+    # Kategorie festlegen (optional anpassbar)
+    # "s-handy-telekom" ist Kategorie für Handys/Telekommunikation
+    kategorie = "s-handy-telekom"
 
-    BASE_URL = "https://www.ebay-kleinanzeigen.de"
-    # URL passend zum Suchfilter bauen
-    url = (
-        f"{BASE_URL}/s-suchanfrage:angebote/{modell.replace(' ', '-')}/"
-        f"preis:{min_price}--{max_price}/"
-    )
+    # Modell für URL anpassen: Kleinbuchstaben, Bindestriche statt Leerzeichen
+    modell_url = modell.lower().replace(" ", "-")
+
+    # Preisbereich für URL: kleinanzeigen nutzt ':' als Trennung, kein '-'
+    preis_filter = f"preis:{min_price}:{max_price}"
+
+    # Angebotsfilter: nur Angebote
+    angebots_filter = "anzeige:angebote"
+
+    # Versandfilter
+    versand_filter = ""
     if nur_versand:
-        url += "versand:1/"
+        # Filter-Suffix bei Versand nur in Kombination mit Kategorie (bzw. im Pfad)
+        # Beispiel: k0c173+handy_telekom.versand_s:ja
+        # Hier k0 ist Paginierung?  c173+handy_telekom.versand_s:ja  ist Filter
+        versand_filter = "c173+handy_telekom.versand_s:ja"
 
-    _log(f"[scrape_ads] URL: {url}")
+    # Paginierung Start (k0 = Seite 0)
+    pagination = "k0"
 
-    results = []
+    # Baue URL zusammen
+    # Basis
+    base_url = "https://www.kleinanzeigen.de/"
+
+    # Pfad zusammenbauen
+    # Falls Versandfilter gesetzt, hänge diesen an Pagination an
+    if versand_filter:
+        pagination += versand_filter
+
+    url = (
+        f"{base_url}"
+        f"{kategorie}/"
+        f"{angebots_filter}/"
+        f"{preis_filter}/"
+        f"{modell_url}/"
+        f"{pagination}"
+    )
+
+    _log(f"Starte Suche nach '{modell}' mit min_price={min_price}, max_price={max_price}, nur_versand={nur_versand}")
+    _log(f"URL: {url}")
+
+    ads = []
 
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+            context = browser.new_context()
+            page = context.new_page()
 
             page.goto(url)
-            _log(f"[scrape_ads] Seite geladen: {page.title()}")
+            # Warte bis Anzeigen-Liste sichtbar ist (li.ad-listitem)
+            try:
+                page.wait_for_selector("li.ad-listitem", timeout=10000)
+            except PlaywrightTimeoutError:
+                _log("Seite geladen: Fehler | 404 oder keine Anzeigen gefunden")
+                return ads
 
-            page.wait_for_selector("li.ad-listitem", timeout=10000)
-            ads = page.query_selector_all("li.ad-listitem")
-            _log(f"[scrape_ads] Gefundene Anzeigen: {len(ads)}")
+            # Anzeigen auslesen
+            ad_elements = page.query_selector_all("li.ad-listitem")
 
-            for i, ad in enumerate(ads):
+            _log(f"{len(ad_elements)} Anzeigen auf der Seite gefunden")
+
+            for ad in ad_elements:
+                # Extrahiere Details
                 try:
-                    title_el = ad.query_selector("a.ellipsis")
-                    title = title_el.inner_text().strip() if title_el else "Kein Titel"
-
-                    link = title_el.get_attribute("href") if title_el else ""
+                    title = ad.query_selector("a.ellipsis").inner_text().strip()
+                    link = ad.query_selector("a.ellipsis").get_attribute("href")
+                    # Links sind relativ, daher basis-url ergänzen
                     if link and not link.startswith("http"):
-                        link = BASE_URL + link
+                        link = base_url.rstrip("/") + link
 
-                    price_el = ad.query_selector("p.aditem-main--middle--price")
-                    price_text = price_el.inner_text().strip() if price_el else "0 €"
-                    price = _parse_price(price_text)
+                    price_text = ad.query_selector("p.aditem-main--middle--price-shipping").inner_text().strip()
+                    # Preis extrahieren, z.B. "350 €"
+                    price_match = re.search(r"(\d+[\.,]?\d*)\s*€", price_text)
+                    price = float(price_match.group(1).replace(",", ".")) if price_match else 0
 
                     image_el = ad.query_selector("img")
-                    image_url = image_el.get_attribute("src") if image_el else ""
+                    image = image_el.get_attribute("src") if image_el else ""
 
-                    versand = False
-                    versand_el = ad.query_selector("p.aditem-main--middle--shipping")
-                    if versand_el:
-                        versand = "Versand" in versand_el.inner_text()
+                    created_at = ad.query_selector("time").get_attribute("datetime") if ad.query_selector("time") else ""
 
-                    zeit_el = ad.query_selector("div.aditem-main--bottom--left")
-                    created_at = None
-                    if zeit_el:
-                        zeit_text = zeit_el.inner_text()
-                        created_at = _parse_date_from_text(zeit_text)
+                    # Versandinfo prüfen
+                    versand_text = ad.query_selector("p.aditem-main--middle--shipping").inner_text().strip() if ad.query_selector("p.aditem-main--middle--shipping") else ""
+                    versand = "Versand" in versand_text
 
-                    # Kurzbeschreibung wird nicht geladen, da auf Detailseite
+                    # Platzhalter Beschreibung, da Detailseite extra geladen werden müsste (für Performance erstmal leer)
+                    beschreibung = ""
 
-                    # Reparaturkosten schätzen mit config
-                    rep_kosten = 0
-                    if config and "reparaturkosten" in config:
-                        rep_kosten = _estimate_repair_costs("", config["reparaturkosten"])
+                    # Reparaturkosten initial 0, können später gesetzt werden
+                    reparaturkosten = 0
 
-                    ad_data = {
+                    ads.append({
                         "title": title,
                         "link": link,
                         "price": price,
-                        "image": image_url,
+                        "image": image,
+                        "created_at": created_at,
+                        "updated_at": created_at,
                         "versand": versand,
-                        "created_at": created_at or "",
-                        "updated_at": "",
-                        "beschreibung": "",
-                        "reparaturkosten": rep_kosten,
-                    }
-
-                    _log(f"[scrape_ads] Anzeige {i+1}: {title} - {price}€ - Versand: {versand}")
-
-                    results.append(ad_data)
+                        "beschreibung": beschreibung,
+                        "reparaturkosten": reparaturkosten,
+                    })
 
                 except Exception as e:
-                    _log(f"[scrape_ads] Fehler bei Anzeige {i+1}: {e}")
+                    _log(f"Fehler beim Verarbeiten einer Anzeige: {e}")
 
             browser.close()
+
     except Exception as e:
-        _log(f"[scrape_ads] Fehler beim Abruf der Seite: {e}")
+        _log(f"Fehler beim Abruf der Seite: {e}")
 
-    _log(f"[scrape_ads] Fertig, {len(results)} Anzeigen zurückgegeben")
-    return results
-
-
-def _parse_price(text: str) -> int:
-    # Preis extrahieren z.B. "120 €" -> 120
-    match = re.search(r"(\d+)", text.replace(".", ""))
-    if match:
-        return int(match.group(1))
-    return 0
-
-def _parse_date_from_text(text: str) -> str:
-    # Einfacher Platzhalter: heutiges Datum
-    return datetime.now().strftime("%Y-%m-%d %H:%M")
-
-def _estimate_repair_costs(beschreibung: str, reparaturkosten_dict: dict) -> int:
-    # Sehr einfache Heuristik: keine Beschreibung, daher 0
-    # Kann bei Bedarf erweitert werden
-    kosten = 0
-    beschreibung_lower = beschreibung.lower()
-    for defekt, preis in reparaturkosten_dict.items():
-        if defekt.lower() in beschreibung_lower:
-            kosten += preis
-    return kosten
+    _log(f"Fertig, {len(ads)} Anzeigen zurückgegeben")
+    return ads
