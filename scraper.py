@@ -1,84 +1,140 @@
-import asyncio
-from playwright.async_api import async_playwright
-from datetime import datetime
 import re
+import time
+import uuid
+from datetime import datetime
+from urllib.parse import quote, urljoin
+from playwright.sync_api import sync_playwright
 
-async def scrape_kleinanzeigen(verkaufspreis: int, wunsch_marge: int, reparaturkosten: int, debug: bool = False):
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
 
-        url = "https://www.kleinanzeigen.de/s-handys-telefone/iphone-14-pro/k0"
-        await page.goto(url)
+def scrape_ads(
+    modell,
+    min_price=0,
+    max_price=1500,
+    nur_versand=False,
+    nur_angebote=True,
+    debug=True,  # 🟢 Standardwert auf True gesetzt
+    config=None,
+    log=None
+):
+    if config is None:
+        config = {
+            "verkaufspreis": 600,
+            "wunsch_marge": 100,
+            "reparaturkosten": {}
+        }
 
-        await page.wait_for_selector("article.aditem")
+    if log is None:
+        def log(x): pass  # 🔄 Fallback-Logger
 
-        eintraege = await page.locator("article.aditem").all()
-        print(f"📦 {len(eintraege)} Anzeigen gefunden")
+    base_url = "https://www.kleinanzeigen.de"
+    kategorie = "handy-telekom" if nur_versand else ""
 
-        for index, eintrag in enumerate(eintraege):
+    # 🔧 Korrektur Linkaufbau: s-anzeige:angebote statt s/anzeige:angebote
+    pfadteile = []
+    if nur_angebote:
+        pfadteile.append("s-anzeige:angebote")
+    else:
+        pfadteile.append("s")  # fallback, falls Angebote nicht gefiltert
+
+    if kategorie:
+        pfadteile.append(f"-{kategorie}")
+    pfadteile.append(f"preis:{min_price}:{max_price}")
+    pfadteile.append(quote(modell))
+    pfadteile.append("k0")
+
+    url = f"{base_url}/{'/'.join(pfadteile)}"
+    if nur_versand:
+        url += "c173+handy_telekom.versand_s:ja"
+
+    log(f"[🔍] Starte Suche unter: {url}")
+
+    anzeigen = []
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+        page.goto(url, timeout=60000)
+        page.wait_for_timeout(3000)
+
+        eintraege = page.locator("article.aditem")
+        count = eintraege.count()
+        log(f"[📄] {count} Anzeigen gefunden.")
+
+        for i in range(count):
             try:
-                print(f"\n--- Anzeige {index + 1}/{len(eintraege)} ---")
+                entry = eintraege.nth(i)
 
-                # Zwei mögliche Links – wir wählen den sichtbaren und klickbaren Link
-                links = await eintrag.locator("a.ellipsis").all()
-                if not links:
-                    raise Exception("Kein passender Link gefunden")
+                ad_id = entry.get_attribute("data-adid")
+                custom_href = entry.get_attribute("data-custom-href")
+                if not custom_href or not custom_href.startswith("/s-anzeige/"):
+                    continue
 
-                link_element = links[0]
-                relative_url = await link_element.get_attribute("href")
-                if not relative_url:
-                    raise Exception("Kein href gefunden")
-                link = f"https://www.kleinanzeigen.de{relative_url}"
-                print(f"[🔗] Link: {link}")
+                full_link = urljoin(base_url, custom_href)
 
-                # Titel extrahieren
-                titel = await link_element.inner_text()
-                titel = titel.strip()
-                print(f"[📝] Titel: {titel}")
+                title_el = entry.locator("h2.text-module-begin a")
+                title = title_el.inner_text().strip() if title_el else "Unbekannter Titel"
 
-                # Preis aus Text extrahieren
-                preis_element = await eintrag.locator(".aditem-main--middle .aditem-main--middle--price").first
-                preis_text = await preis_element.inner_text()
-                preis_match = re.search(r"\d+", preis_text.replace(".", ""))
-                preis = int(preis_match.group()) if preis_match else 0
-                print(f"[💰] Preis: {preis}€")
+                preis_el = entry.locator(".aditem-main--middle--price-shipping--price")
+                preis_text = preis_el.inner_text().strip() if preis_el else ""
+                preis_text = preis_text.replace("€", "").replace(".", "").replace(",", "").strip()
+                try:
+                    price = int(re.findall(r"\d+", preis_text)[0])
+                except (IndexError, ValueError):
+                    price = 0
 
-                # Bewertung (grün, gelb, rot)
-                max_einkaufspreis = verkaufspreis - wunsch_marge - reparaturkosten
-                if preis <= max_einkaufspreis:
-                    farbe = "grün"
-                elif preis <= max_einkaufspreis + 50:
-                    farbe = "gelb"
+                image_el = entry.locator("img")
+                image_url = image_el.get_attribute("src") if image_el else ""
+
+                # Detailseite öffnen, um Beschreibung zu laden
+                detail_page = context.new_page()
+                detail_page.goto(full_link, timeout=60000)
+                detail_page.wait_for_timeout(3000)
+
+                try:
+                    beschreibung = detail_page.locator("div[data-testid='description']").inner_text(timeout=3000)
+                except:
+                    beschreibung = ""
+                detail_page.close()
+
+                rep_summe = 0
+                for defekt, kosten in config["reparaturkosten"].items():
+                    if defekt.lower() in beschreibung.lower():
+                        rep_summe += kosten
+
+                max_ek = config["verkaufspreis"] - config["wunsch_marge"] - rep_summe
+
+                if price <= max_ek:
+                    bewertung = "grün"
+                elif price <= max_ek + config["wunsch_marge"] * 0.1:
+                    bewertung = "blau"
                 else:
-                    farbe = "rot"
+                    bewertung = "rot"
 
-                print(f"[✅] Bewertung: {farbe} (Max EK: {max_einkaufspreis}€)")
+                log(f"📦 {title} | {price} € | Max EK: {max_ek} € | Bewertung: {bewertung}")
+
+                anzeigen.append({
+                    "id": ad_id or str(uuid.uuid5(uuid.NAMESPACE_URL, full_link)),
+                    "modell": modell,
+                    "title": title,
+                    "price": price,
+                    "link": full_link,
+                    "image": image_url,
+                    "versand": nur_versand,
+                    "beschreibung": beschreibung,
+                    "reparaturkosten": rep_summe,
+                    "bewertung": bewertung,
+                    "created_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
+                    "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
+                })
 
                 if debug:
-                    # Detailseite besuchen
-                    detail = await browser.new_page()
-                    await detail.goto(link)
-                    try:
-                        await detail.wait_for_selector("div[data-testid='description']", timeout=10_000)
-                        beschreibung = await detail.locator("div[data-testid='description']").inner_text()
-                        beschreibung = beschreibung.strip()
-                        print(f"[📄] Beschreibung: {beschreibung[:150]}{'...' if len(beschreibung) > 150 else ''}")
-                    except Exception:
-                        print(f"[⚠️] Detailseitenfehler: Beschreibung konnte nicht geladen werden.")
-                    await detail.close()
+                    time.sleep(1)
 
             except Exception as e:
-                print(f"[❌] Fehler bei Anzeige {index + 1}: {e}")
+                log(f"[⚠️] Fehler bei Anzeige {i+1}: {e}")
+                continue
 
-        await browser.close()
+        browser.close()
 
-
-# Beispielhafte Verwendung
-if __name__ == "__main__":
-    asyncio.run(scrape_kleinanzeigen(
-        verkaufspreis=550,
-        wunsch_marge=100,
-        reparaturkosten=70,
-        debug=True
-    ))
+    return anzeigen
