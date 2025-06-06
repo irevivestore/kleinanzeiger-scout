@@ -1,94 +1,76 @@
 import re
-import asyncio
 from datetime import datetime
-from urllib.parse import quote_plus
-from playwright.async_api import async_playwright
+from playwright.sync_api import sync_playwright
 
+def scrape_ads(config):
+    suchbegriff = config.get("suchbegriff", "")
+    min_price = config.get("min_price", 0)
+    max_price = config.get("max_price", 1500)
+    nur_versand = config.get("nur_versand", False)
+    nur_angebote = config.get("nur_angebote", True)
+    debug = config.get("debug", False)
 
-async def scrape_ads(suchbegriff, min_price=0, max_price=1500, nur_versand=False, nur_angebote=True, debug=False):
-    if debug:
-        print(f"[DEBUG] scrape_ads wurde mit Parametern aufgerufen: suchbegriff='{suchbegriff}', min_price={min_price}, max_price={max_price}, nur_versand={nur_versand}, nur_angebote={nur_angebote}")
+    print(f"[scrape_ads] Starte Suche nach '{suchbegriff}' mit min_price={min_price}, max_price={max_price}, nur_versand={nur_versand}, nur_angebote={nur_angebote}")
 
     base_url = "https://www.kleinanzeigen.de/s/"
-    filters = []
+    filter_path = ""
 
     if nur_angebote:
-        filters.append("anzeige:angebote")
+        filter_path += "anzeige:angebote/"
+    filter_path += f"preis:{min_price}:{max_price}/"
+    suchbegriff_encoded = suchbegriff.replace(" ", "+")
+    final_url = f"{base_url}{filter_path}{suchbegriff_encoded}/k0"
 
-    if min_price is not None and max_price is not None:
-        filters.append(f"preis:{min_price}:{max_price}")
+    print(f"[scrape_ads] URL: {final_url}")
 
-    filter_string = "/".join(filters)
-    encoded_query = quote_plus(suchbegriff)
-    url = f"{base_url}{filter_string}/{encoded_query}/k0"
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(final_url)
+        page.wait_for_timeout(3000)
 
-    if debug:
-        print(f"[scrape_ads] URL: {url}")
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch()
-        page = await browser.new_page()
-        await page.goto(url)
-        await page.wait_for_timeout(3000)
-
-        ad_elements = await page.query_selector_all("li.aditem")
-
-        if debug:
-            print(f"[scrape_ads] {len(ad_elements)} Anzeigen gefunden.")
+        items = page.query_selector_all("article.aditem")
 
         anzeigen = []
+        print(f"[scrape_ads] {len(items)} Anzeigen gefunden.")
 
-        for ad in ad_elements:
+        for item in items:
             try:
-                link_element = await ad.query_selector("a.ellipsis")
-                if not link_element:
-                    continue
+                title_el = item.query_selector("a.ellipsis")
+                title = title_el.inner_text().strip() if title_el else "Unbekannter Titel"
 
-                relative_url = await link_element.get_attribute("href")
-                if not relative_url:
-                    continue
+                url_el = item.query_selector("a.ellipsis")
+                url = url_el.get_attribute("href") if url_el else None
+                full_url = f"https://www.kleinanzeigen.de{url}" if url else None
 
-                ad_url = f"https://www.kleinanzeigen.de{relative_url}"
+                preis_el = item.query_selector("p.aditem-main--middle--price-shipping")
+                raw_preis = preis_el.inner_text().strip() if preis_el else "0 €"
+                preis = parse_price(raw_preis)
 
-                # Detailseite laden für Titel und Beschreibung
-                detail_page = await browser.new_page()
-                await detail_page.goto(ad_url)
-                await detail_page.wait_for_timeout(2000)
+                altpreis = extract_alt_price(raw_preis)
+                preis_anzeige = format_price_display(preis, altpreis)
 
-                # Titel auslesen
-                title_element = await detail_page.query_selector("h1")
-                title = await title_element.inner_text() if title_element else "Unbekannter Titel"
+                timestamp = datetime.now().strftime("%d.%m.%Y %H:%M")
 
-                # Beschreibung auslesen
-                beschreibung_element = await detail_page.query_selector("#viewad-description")
-                beschreibung = await beschreibung_element.inner_text() if beschreibung_element else ""
-
-                await detail_page.close()
-
-                # Preis aus Listing
-                price_element = await ad.query_selector(".aditem-main--middle .aditem-main--middle--price")
-                price_raw = await price_element.inner_text() if price_element else "0 €"
-                price_raw = price_raw.replace(".", "").replace(" €", "").strip()
-
-                # Preis und alter Preis extrahieren
-                price_match = re.match(r"(\\d{2,5})(\\d{2,5})?", price_raw)
-                price = int(price_match.group(1)) if price_match else 0
-                price_alt = int(price_match.group(2)) if price_match and price_match.group(2) else None
-
-                # Zeitstempel formatieren
-                now = datetime.now()
-                timestamp = now.strftime("%d.%m.%Y %H:%M")
+                beschreibung = ""
+                if full_url:
+                    detail_page = browser.new_page()
+                    detail_page.goto(full_url)
+                    detail_page.wait_for_timeout(1500)
+                    desc_el = detail_page.query_selector("p[class*='text-module']")
+                    beschreibung = desc_el.inner_text().strip() if desc_el else ""
+                    detail_page.close()
 
                 anzeigen.append({
-                    "id": relative_url.split("/")[-1],
-                    "titel": title.strip(),
-                    "url": ad_url,
-                    "preis": price,
-                    "preis_alt": price_alt,
-                    "beschreibung": beschreibung.strip(),
-                    "erfasst_am": timestamp,
-                    "aktualisiert_am": timestamp,
+                    "id": extract_id_from_url(full_url),
+                    "titel": title,
+                    "url": full_url,
+                    "preis": preis,
+                    "preis_anzeige": preis_anzeige,
+                    "beschreibung": beschreibung,
                     "modell": suchbegriff,
+                    "zeit_erfasst": timestamp,
+                    "zeit_aktualisiert": timestamp,
                 })
 
             except Exception as e:
@@ -96,15 +78,34 @@ async def scrape_ads(suchbegriff, min_price=0, max_price=1500, nur_versand=False
                     print(f"[scrape_ads] Fehler beim Parsen einer Anzeige: {e}")
                 continue
 
-        await browser.close()
+        browser.close()
 
-        if debug:
-            print(f"[scrape_ads] Fertig, {len(anzeigen)} Anzeigen zurückgegeben")
-
-        return anzeigen
+    print(f"[scrape_ads] Fertig, {len(anzeigen)} Anzeigen zurückgegeben")
+    return anzeigen
 
 
-if __name__ == "__main__":
-    ergebnisse = asyncio.run(scrape_ads("iPhone 14 Pro", min_price=0, max_price=1500, nur_versand=False, nur_angebote=True, debug=True))
-    for ad in ergebnisse:
-        print(ad)
+def parse_price(preis_text):
+    match = re.search(r"(\d{2,6})\s?€", preis_text.replace(".", ""))
+    if match:
+        return int(match.group(1))
+    return 0
+
+
+def extract_alt_price(preis_text):
+    match = re.findall(r"(\d{2,6})\s?€?", preis_text.replace(".", ""))
+    if len(match) == 2:
+        return int(match[1])
+    return None
+
+
+def format_price_display(preis, altpreis=None):
+    if altpreis and altpreis != preis:
+        return f"{preis} € (~~{altpreis} €~~)"
+    return f"{preis} €"
+
+
+def extract_id_from_url(url):
+    if not url:
+        return "unbekannt"
+    match = re.search(r"/s-anzeige/.*?/(\d+)", url)
+    return match.group(1) if match else "unbekannt"
