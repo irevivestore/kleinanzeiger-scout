@@ -1,10 +1,21 @@
+import re
 import time
 import uuid
 from datetime import datetime
+from urllib.parse import quote
 from playwright.sync_api import sync_playwright
 
 
-def scrape_ads(modell, min_price=0, max_price=1500, nur_versand=False, nur_angebote=True, debug=False, config=None, log=None):
+def scrape_ads(
+    modell,
+    min_price=0,
+    max_price=1500,
+    nur_versand=False,
+    nur_angebote=True,
+    debug=False,
+    config=None,
+    log=None
+):
     if config is None:
         config = {
             "verkaufspreis": 600,
@@ -13,21 +24,28 @@ def scrape_ads(modell, min_price=0, max_price=1500, nur_versand=False, nur_angeb
         }
 
     if log is None:
-        def log(x): pass  # Fallback-Logfunktion, falls keine übergeben wurde
+        def log(x): pass  # Fallback-Logger
 
-    base_url = "https://www.kleinanzeigen.de/s-anzeige:angebote"
-    if not nur_angebote:
-        base_url = "https://www.kleinanzeigen.de/s-anzeige"  # schließt Gesuche mit ein
+    # Linkaufbau wie in der alten, funktionierenden Version
+    base_url = "https://www.kleinanzeigen.de"
+    kategorie = "handy-telekom" if nur_versand else ""
 
-    suchbegriff = modell.replace(" ", "-")
-    url = f"{base_url}/{suchbegriff}/k0"
-    url += f"?price={min_price}:{max_price}"
+    pfadteile = ["s"]
+    if kategorie:
+        pfadteile.append(f"-{kategorie}")
+    if nur_angebote:
+        pfadteile.append("anzeige:angebote")
+    pfadteile.append(f"preis:{min_price}:{max_price}")
+    pfadteile.append(quote(modell))
+    pfadteile.append("k0")
+
+    url = f"{base_url}/{'/'.join(pfadteile)}"
     if nur_versand:
-        url += "&shipping=1"
+        url += "c173+handy_telekom.versand_s:ja"
 
     log(f"[🔍] Starte Suche unter: {url}")
 
-    new_ads = []
+    anzeigen = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -36,33 +54,43 @@ def scrape_ads(modell, min_price=0, max_price=1500, nur_versand=False, nur_angeb
         page.goto(url, timeout=60000)
         page.wait_for_timeout(3000)
 
-        # Alle Anzeigen auf der Ergebnisseite sammeln
-        eintraege = page.locator("li.aditem")
-
+        eintraege = page.locator("article.aditem")
         count = eintraege.count()
         log(f"[📄] {count} Anzeigen gefunden.")
 
         for i in range(count):
             try:
                 entry = eintraege.nth(i)
-                title = entry.locator("a.ellipsis").inner_text().strip()
-                price_text = entry.locator(".aditem-main--middle .aditem-main--middle--price").inner_text()
-                price = int(price_text.replace("€", "").replace(".", "").replace(",", "").strip())
 
-                link = entry.locator("a.ellipsis").get_attribute("href")
-                if not link.startswith("https"):
-                    link = "https://www.kleinanzeigen.de" + link
+                link_el = entry.locator("a")
+                link = link_el.get_attribute("href")
+                if not link or not link.startswith("/s-anzeige/"):
+                    continue
+                full_link = base_url + link
 
-                image = entry.locator("img").get_attribute("src") or ""
+                title_el = entry.locator("a h2")
+                title = title_el.inner_text().strip() if title_el else "Unbekannter Titel"
 
-                versand = "versand möglich" in entry.inner_text().lower()
+                preis_el = entry.locator(".aditem-main--middle .aditem-main--middle--price")
+                preis_text = preis_el.inner_text().strip() if preis_el else ""
+                preis_text = preis_text.replace("€", "").replace(".", "").replace(",", "").strip()
+                try:
+                    price = int(re.findall(r"\d+", preis_text)[0])
+                except (IndexError, ValueError):
+                    price = 0
 
-                # Detailseite laden
+                image_el = entry.locator("img")
+                image_url = image_el.get_attribute("src") if image_el else ""
+
+                # Detailseite öffnen, um Beschreibung zu laden
                 detail_page = context.new_page()
-                detail_page.goto(link, timeout=60000)
+                detail_page.goto(full_link, timeout=60000)
                 detail_page.wait_for_timeout(3000)
 
-                beschreibung = detail_page.locator("div[data-testid='description']").inner_text(timeout=3000)
+                try:
+                    beschreibung = detail_page.locator("div[data-testid='description']").inner_text(timeout=3000)
+                except:
+                    beschreibung = ""
                 detail_page.close()
 
                 rep_summe = 0
@@ -72,18 +100,26 @@ def scrape_ads(modell, min_price=0, max_price=1500, nur_versand=False, nur_angeb
 
                 max_ek = config["verkaufspreis"] - config["wunsch_marge"] - rep_summe
 
-                log(f"📦 {title} | {price} € | Versand: {versand} | Max EK: {max_ek} €")
+                if price <= max_ek:
+                    bewertung = "grün"
+                elif price <= max_ek + config["wunsch_marge"] * 0.1:
+                    bewertung = "blau"
+                else:
+                    bewertung = "rot"
 
-                new_ads.append({
-                    "id": str(uuid.uuid5(uuid.NAMESPACE_URL, link)),
+                log(f"📦 {title} | {price} € | Max EK: {max_ek} € | Bewertung: {bewertung}")
+
+                anzeigen.append({
+                    "id": str(uuid.uuid5(uuid.NAMESPACE_URL, full_link)),
                     "modell": modell,
                     "title": title,
                     "price": price,
-                    "link": link,
-                    "image": image,
-                    "versand": versand,
+                    "link": full_link,
+                    "image": image_url,
+                    "versand": nur_versand,
                     "beschreibung": beschreibung,
                     "reparaturkosten": rep_summe,
+                    "bewertung": bewertung,
                     "created_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
                     "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
                 })
@@ -93,7 +129,8 @@ def scrape_ads(modell, min_price=0, max_price=1500, nur_versand=False, nur_angeb
 
             except Exception as e:
                 log(f"[⚠️] Fehler bei Anzeige {i+1}: {e}")
+                continue
 
         browser.close()
 
-    return new_ads
+    return anzeigen
