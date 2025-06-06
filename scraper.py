@@ -2,7 +2,7 @@ import re
 import time
 import uuid
 from datetime import datetime
-from urllib.parse import quote
+from urllib.parse import quote, urljoin
 from playwright.sync_api import sync_playwright
 
 
@@ -26,7 +26,6 @@ def scrape_ads(
     if log is None:
         def log(x): pass  # Fallback-Logger
 
-    # Linkaufbau wie in der alten, funktionierenden Version
     base_url = "https://www.kleinanzeigen.de"
     kategorie = "handy-telekom" if nur_versand else ""
 
@@ -62,16 +61,17 @@ def scrape_ads(
             try:
                 entry = eintraege.nth(i)
 
-                link_el = entry.locator("a")
-                link = link_el.get_attribute("href")
-                if not link or not link.startswith("/s-anzeige/"):
+                ad_id = entry.get_attribute("data-adid")
+                custom_href = entry.get_attribute("data-custom-href")
+                if not custom_href or not custom_href.startswith("/s-anzeige/"):
                     continue
-                full_link = base_url + link
 
-                title_el = entry.locator("a h2")
+                full_link = urljoin(base_url, custom_href)
+
+                title_el = entry.locator("h2.text-module-begin a")
                 title = title_el.inner_text().strip() if title_el else "Unbekannter Titel"
 
-                preis_el = entry.locator(".aditem-main--middle .aditem-main--middle--price")
+                preis_el = entry.locator(".aditem-main--middle--price-shipping--price")
                 preis_text = preis_el.inner_text().strip() if preis_el else ""
                 preis_text = preis_text.replace("€", "").replace(".", "").replace(",", "").strip()
                 try:
@@ -110,7 +110,7 @@ def scrape_ads(
                 log(f"📦 {title} | {price} € | Max EK: {max_ek} € | Bewertung: {bewertung}")
 
                 anzeigen.append({
-                    "id": str(uuid.uuid5(uuid.NAMESPACE_URL, full_link)),
+                    "id": ad_id or str(uuid.uuid5(uuid.NAMESPACE_URL, full_link)),
                     "modell": modell,
                     "title": title,
                     "price": price,
