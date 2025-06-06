@@ -3,8 +3,7 @@ import time
 import uuid
 from datetime import datetime
 from urllib.parse import quote, urljoin
-from playwright.sync_api import sync_playwright
-
+from playwright.sync_api import sync_playwright, TimeoutError
 
 def scrape_ads(
     modell,
@@ -12,10 +11,13 @@ def scrape_ads(
     max_price=1500,
     nur_versand=False,
     nur_angebote=True,
-    debug=True,  # 🟢 Standardwert auf True gesetzt
+    debug=True,
     config=None,
     log=None
 ):
+    if log is None:
+        def log(x): print(x)
+    
     if config is None:
         config = {
             "verkaufspreis": 600,
@@ -23,118 +25,147 @@ def scrape_ads(
             "reparaturkosten": {}
         }
 
-    if log is None:
-        def log(x): pass  # 🔄 Fallback-Logger
-
     base_url = "https://www.kleinanzeigen.de"
     kategorie = "handy-telekom" if nur_versand else ""
-
-    # 🔧 Korrektur Linkaufbau: s-anzeige:angebote statt s/anzeige:angebote
-    pfadteile = []
-    if nur_angebote:
-        pfadteile.append("s-anzeige:angebote")
-    else:
-        pfadteile.append("s")  # fallback, falls Angebote nicht gefiltert
-
+    
+    # URL construction
+    pfadteile = ["s-anzeige:angebote" if nur_angebote else "s"]
     if kategorie:
         pfadteile.append(f"-{kategorie}")
-    pfadteile.append(f"preis:{min_price}:{max_price}")
-    pfadteile.append(quote(modell))
-    pfadteile.append("k0")
-
+    pfadteile.extend([
+        f"preis:{min_price}:{max_price}",
+        quote(modell),
+        "k0"
+    ])
+    
     url = f"{base_url}/{'/'.join(pfadteile)}"
     if nur_versand:
         url += "c173+handy_telekom.versand_s:ja"
-
+    
     log(f"[🔍] Starte Suche unter: {url}")
+    log(f"[⚙️] Konfiguration: {config}")
 
     anzeigen = []
-
+    
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
-        page = context.new_page()
-        page.goto(url, timeout=60000)
-        page.wait_for_timeout(3000)
-
-        eintraege = page.locator("article.aditem")
-        count = eintraege.count()
-        log(f"[📄] {count} Anzeigen gefunden.")
-
-        for i in range(count):
-            try:
-                entry = eintraege.nth(i)
-
-                ad_id = entry.get_attribute("data-adid")
-                custom_href = entry.get_attribute("data-custom-href")
-                if not custom_href or not custom_href.startswith("/s-anzeige/"):
+        try:
+            browser = p.chromium.launch(
+                headless=not debug,
+                args=["--enable-logging", "--v=1"]
+            )
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                viewport={"width": 1280, "height": 720}
+            )
+            page = context.new_page()
+            
+            # Enable request logging
+            def on_request(request):
+                log(f"→ {request.method} {request.url}")
+            
+            page.on("request", on_request)
+            
+            # Main page loading
+            page.goto(url, timeout=90000)
+            page.wait_for_load_state("networkidle")
+            
+            if debug:
+                page.screenshot(path="debug_main_page.png")
+                log("[📸] Screenshot der Hauptseite gespeichert")
+            
+            # Wait for ads
+            page.wait_for_selector("article.aditem", timeout=15000)
+            eintraege = page.locator("article.aditem")
+            count = eintraege.count()
+            log(f"[📄] {count} Anzeigen gefunden")
+            
+            if count == 0:
+                log("[⚠️] Keine Anzeigen gefunden - HTML-Inhalt:")
+                log(page.content()[:500] + "...")
+                return []
+            
+            # Process ads
+            for i in range(min(count, 50)):  # Limit to 50 for debugging
+                try:
+                    log(f"\n--- Anzeige {i+1}/{count} ---")
+                    entry = eintraege.nth(i)
+                    
+                    # Extract basic info
+                    ad_id = entry.get_attribute("data-adid") or str(uuid.uuid4())
+                    custom_href = entry.get_attribute("data-custom-href") or entry.locator("a").get_attribute("href")
+                    
+                    if not custom_href or not custom_href.startswith("/s-anzeige/"):
+                        log(f"[⚠️] Ungültiger Link: {custom_href}")
+                        continue
+                    
+                    full_link = urljoin(base_url, custom_href)
+                    log(f"[🔗] Link: {full_link}")
+                    
+                    # Extract title and price
+                    title = entry.locator("h2").inner_text().strip()
+                    price_text = entry.locator(".aditem-main--middle--price-shipping--price").inner_text()
+                    price = int(re.sub(r"[^\d]", "", price_text or "0"))
+                    
+                    log(f"[💰] {title} - {price}€")
+                    
+                    # Get description
+                    detail_page = context.new_page()
+                    try:
+                        detail_page.goto(full_link, timeout=30000)
+                        detail_page.wait_for_selector("div[data-testid='description']", timeout=10000)
+                        
+                        beschreibung = detail_page.locator("div[data-testid='description']").inner_text()
+                        log(f"[📝] Beschreibungslänge: {len(beschreibung)} Zeichen")
+                    except Exception as e:
+                        log(f"[⚠️] Detailseitenfehler: {str(e)}")
+                        beschreibung = ""
+                    finally:
+                        detail_page.close()
+                    
+                    # Calculate repair costs
+                    rep_summe = 0
+                    for defekt, kosten in config["reparaturkosten"].items():
+                        if defekt.lower() in beschreibung.lower():
+                            rep_summe += kosten
+                    
+                    # Evaluate deal
+                    max_ek = config["verkaufspreis"] - config["wunsch_marge"] - rep_summe
+                    bewertung = (
+                        "grün" if price <= max_ek else
+                        "blau" if price <= max_ek + (config["wunsch_marge"] * 0.1) else
+                        "rot"
+                    )
+                    
+                    log(f"[✅] Bewertung: {bewertung} (Max EK: {max_ek}€)")
+                    
+                    anzeigen.append({
+                        "id": ad_id,
+                        "modell": modell,
+                        "title": title,
+                        "price": price,
+                        "link": full_link,
+                        "image": entry.locator("img").get_attribute("src"),
+                        "versand": nur_versand,
+                        "beschreibung": beschreibung,
+                        "reparaturkosten": rep_summe,
+                        "bewertung": bewertung,
+                        "created_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
+                        "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
+                    })
+                    
+                    if debug:
+                        time.sleep(1)
+                
+                except Exception as e:
+                    log(f"[❌] Fehler bei Anzeige {i+1}: {str(e)}")
                     continue
-
-                full_link = urljoin(base_url, custom_href)
-
-                title_el = entry.locator("h2.text-module-begin a")
-                title = title_el.inner_text().strip() if title_el else "Unbekannter Titel"
-
-                preis_el = entry.locator(".aditem-main--middle--price-shipping--price")
-                preis_text = preis_el.inner_text().strip() if preis_el else ""
-                preis_text = preis_text.replace("€", "").replace(".", "").replace(",", "").strip()
-                try:
-                    price = int(re.findall(r"\d+", preis_text)[0])
-                except (IndexError, ValueError):
-                    price = 0
-
-                image_el = entry.locator("img")
-                image_url = image_el.get_attribute("src") if image_el else ""
-
-                # Detailseite öffnen, um Beschreibung zu laden
-                detail_page = context.new_page()
-                detail_page.goto(full_link, timeout=60000)
-                detail_page.wait_for_timeout(3000)
-
-                try:
-                    beschreibung = detail_page.locator("div[data-testid='description']").inner_text(timeout=3000)
-                except:
-                    beschreibung = ""
-                detail_page.close()
-
-                rep_summe = 0
-                for defekt, kosten in config["reparaturkosten"].items():
-                    if defekt.lower() in beschreibung.lower():
-                        rep_summe += kosten
-
-                max_ek = config["verkaufspreis"] - config["wunsch_marge"] - rep_summe
-
-                if price <= max_ek:
-                    bewertung = "grün"
-                elif price <= max_ek + config["wunsch_marge"] * 0.1:
-                    bewertung = "blau"
-                else:
-                    bewertung = "rot"
-
-                log(f"📦 {title} | {price} € | Max EK: {max_ek} € | Bewertung: {bewertung}")
-
-                anzeigen.append({
-                    "id": ad_id or str(uuid.uuid5(uuid.NAMESPACE_URL, full_link)),
-                    "modell": modell,
-                    "title": title,
-                    "price": price,
-                    "link": full_link,
-                    "image": image_url,
-                    "versand": nur_versand,
-                    "beschreibung": beschreibung,
-                    "reparaturkosten": rep_summe,
-                    "bewertung": bewertung,
-                    "created_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
-                    "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
-                })
-
-                if debug:
-                    time.sleep(1)
-
-            except Exception as e:
-                log(f"[⚠️] Fehler bei Anzeige {i+1}: {e}")
-                continue
-
-        browser.close()
-
-    return anzeigen
+            
+            return anzeigen
+        
+        except Exception as e:
+            log(f"[🔥] Kritischer Fehler: {str(e)}")
+            return []
+        
+        finally:
+            if 'browser' in locals():
+                browser.close()
