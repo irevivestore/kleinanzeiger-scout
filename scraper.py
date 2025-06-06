@@ -12,7 +12,7 @@ def scrape_ads(
     max_price=1500,
     nur_versand=False,
     nur_angebote=True,
-    debug=False,
+    debug=True,  # 🟢 Standardwert auf True gesetzt
     config=None,
     log=None
 ):
@@ -24,16 +24,20 @@ def scrape_ads(
         }
 
     if log is None:
-        def log(x): pass  # Fallback-Logger
+        def log(x): pass  # 🔄 Fallback-Logger
 
     base_url = "https://www.kleinanzeigen.de"
     kategorie = "handy-telekom" if nur_versand else ""
 
-    pfadteile = ["s"]
+    # 🔧 Korrektur Linkaufbau: s-anzeige:angebote statt s/anzeige:angebote
+    pfadteile = []
+    if nur_angebote:
+        pfadteile.append("s-anzeige:angebote")
+    else:
+        pfadteile.append("s")  # fallback, falls Angebote nicht gefiltert
+
     if kategorie:
         pfadteile.append(f"-{kategorie}")
-    if nur_angebote:
-        pfadteile.append("anzeige:angebote")
     pfadteile.append(f"preis:{min_price}:{max_price}")
     pfadteile.append(quote(modell))
     pfadteile.append("k0")
