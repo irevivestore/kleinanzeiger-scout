@@ -50,7 +50,7 @@ def scrape_ads(
     with sync_playwright() as p:
         try:
             browser = p.chromium.launch(
-                headless=not debug,
+                headless=True debug,
                 args=["--enable-logging", "--v=1"]
             )
             context = browser.new_context(
