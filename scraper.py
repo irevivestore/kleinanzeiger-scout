@@ -1,98 +1,83 @@
-# scraper.py
-
-from playwright.sync_api import sync_playwright
-from urllib.parse import quote_plus
-from datetime import datetime
+import asyncio
 import re
+from datetime import datetime
+from playwright.async_api import async_playwright
 
-def scrape_ads(modell, min_price=0, max_price=1500, nur_versand=False, nur_angebote=True, debug=False, config=None, log=print):
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+async def scrape_ads(suchbegriff, min_price=0, max_price=1500, nur_versand=False, nur_angebote=True):
+    print(f"[scrape_ads] Starte Suche nach '{suchbegriff}' mit min_price={min_price}, max_price={max_price}, nur_versand={nur_versand}, nur_angebote={nur_angebote}")
 
-        base_url = "https://www.kleinanzeigen.de/s"
-        suchbegriff = quote_plus(modell)
-        pfadteile = []
+    base_url = "https://www.kleinanzeigen.de/s/"
+    query = suchbegriff.replace(" ", "%20")
+    url = f"{base_url}{'anzeige:angebote/' if nur_angebote else ''}preis:{min_price}:{max_price}/{query}/k0"
+    print(f"[scrape_ads] URL: {url}")
 
-        if nur_angebote:
-            pfadteile.append("anzeige:angebote")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        page = await browser.new_page()
+        await page.goto(url)
+        await page.wait_for_timeout(3000)
 
-        pfadteile.append(f"preis:{min_price}:{max_price}")
-        pfadteile.append(suchbegriff)
-        pfadteile.append("k0")
-
-        url = f"{base_url}/{'/'.join(pfadteile)}"
-        log(f"[scrape_ads] Starte Suche nach '{modell}' mit min_price={min_price}, max_price={max_price}, nur_versand={nur_versand}, nur_angebote={nur_angebote}")
-        log(f"[scrape_ads] URL: {url}")
-
-        page.goto(url)
-        page.wait_for_selector("article.aditem", timeout=10000)
-
-        anzeigenelemente = page.query_selector_all("article.aditem")
-        log(f"[scrape_ads] {len(anzeigenelemente)} Anzeigen gefunden.")
+        items = await page.query_selector_all(".aditem")
+        print(f"[scrape_ads] {len(items)} Anzeigen gefunden.")
 
         anzeigen = []
-        for ad in anzeigenelemente:
+        for item in items:
             try:
-                link_element = ad.query_selector("a")
-                if not link_element:
-                    continue
+                title_el = await item.query_selector(".text-module-begin h2")
+                title = await title_el.inner_text() if title_el else "Unbekannter Titel"
 
-                href = link_element.get_attribute("href")
-                ad_id_match = re.search(r"/s-anzeige/[^/]+/(\d+)", href or "")
-                if not ad_id_match:
-                    continue
-                ad_id = ad_id_match.group(1)
+                price_el = await item.query_selector(".aditem-main--middle .aditem-main--price")
+                price_text = await price_el.inner_text() if price_el else "0 €"
+                price_text = price_text.replace("\n", "").replace(" ", "").replace("€", "")
+                price_numbers = re.findall(r"\d+", price_text)
 
-                # Titel sicher abfragen
-                title_element = ad.query_selector(".text-module-begin h2")
-                title = title_element.inner_text().strip() if title_element else "Unbekannter Titel"
+                if len(price_numbers) == 2:
+                    price_display = f"{price_numbers[0]} € (~~{price_numbers[1]} €~~)"
+                    price = int(price_numbers[0])
+                elif len(price_numbers) == 1:
+                    price_display = f"{price_numbers[0]} €"
+                    price = int(price_numbers[0])
+                else:
+                    price_display = "Unbekannter Preis"
+                    price = 0
 
-                # Preis sicher abfragen
-                price_element = ad.query_selector(".aditem-main--middle .aditem-main--middle--price-shipping")
-                if not price_element:
-                    continue  # ohne Preis nicht sinnvoll
-                price_text = price_element.inner_text()
-                price = int(re.sub(r"[^\d]", "", price_text)) if price_text else 0
+                link_el = await item.query_selector("a")
+                relative_link = await link_el.get_attribute("href") if link_el else None
+                link = f"https://www.kleinanzeigen.de{relative_link}" if relative_link else ""
 
-                image_el = ad.query_selector("img")
-                image_url = image_el.get_attribute("src") if image_el else ""
+                # Beschreibung von Detailseite
+                beschreibung = ""
+                if link:
+                    detail_page = await browser.new_page()
+                    await detail_page.goto(link)
+                    try:
+                        await detail_page.wait_for_selector(".html5-section", timeout=5000)
+                        beschreibung_el = await detail_page.query_selector(".html5-section")
+                        beschreibung = await beschreibung_el.inner_text() if beschreibung_el else ""
+                    except:
+                        beschreibung = "Fehler beim Laden der Detailseite"
+                    await detail_page.close()
 
-                full_url = f"https://www.kleinanzeigen.de{href}"
-
-                reparaturkosten = 0
-                farbe = "#ffffff"
-                if config:
-                    rep_kosten = config["reparaturkosten"]
-                    verkaufspreis = config["verkaufspreis"]
-                    wunsch_marge = config["wunsch_marge"]
-
-                    max_einkaufspreis = verkaufspreis - wunsch_marge
-                    farbe = (
-                        "#d4edda" if price <= max_einkaufspreis else
-                        "#d1ecf1" if price <= max_einkaufspreis + (wunsch_marge * 0.1) else
-                        "#f8d7da"
-                    )
+                zeitpunkt = datetime.now().strftime("%d.%m.%Y %H:%M")
 
                 anzeigen.append({
-                    "id": ad_id,
-                    "title": title,
-                    "price": price,
-                    "link": full_url,
-                    "image": image_url,
-                    "beschreibung": "",
-                    "created_at": datetime.now().isoformat(),
-                    "updated_at": datetime.now().isoformat(),
-                    "versand": nur_versand,
-                    "reparaturkosten": reparaturkosten,
-                    "bewertung": farbe,
-                    "modell": modell
+                    "titel": title.strip(),
+                    "preis": price,
+                    "preis_display": price_display,
+                    "link": link,
+                    "beschreibung": beschreibung.strip(),
+                    "zeitpunkt": zeitpunkt,
+                    "modell": suchbegriff,
                 })
 
             except Exception as e:
-                log(f"[scrape_ads] Fehler beim Parsen einer Anzeige: {e}")
-                continue
+                print(f"[scrape_ads] Fehler beim Parsen einer Anzeige: {e}")
 
-        browser.close()
-        log(f"[scrape_ads] Fertig, {len(anzeigen)} Anzeigen zurückgegeben")
+        await browser.close()
+        print(f"[scrape_ads] Fertig, {len(anzeigen)} Anzeigen zurückgegeben")
         return anzeigen
+
+if __name__ == "__main__":
+    result = asyncio.run(scrape_ads("iPhone 14 Pro"))
+    for ad in result:
+        print(ad)
