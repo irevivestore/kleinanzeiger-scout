@@ -47,27 +47,26 @@ def scrape_ads(
 
     anzeigen = []
     
-   with sync_playwright() as p:
-    try:
-        browser = p.chromium.launch(
-            headless=True,  # Immer headless
-            args=[
-                "--enable-logging",
-                "--v=1",
-                "--no-sandbox",
-                "--disable-setuid-sandbox"
-            ]
-        )
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)...",
-            viewport={"width": 1280, "height": 720}
-        )
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-gpu",
+                    "--disable-dev-shm-usage",
+                    "--no-sandbox",
+                    "--single-process"
+                ]
+            )
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                viewport={"width": 1280, "height": 720}
+            )
             page = context.new_page()
             
             # Enable request logging
             def on_request(request):
                 log(f"→ {request.method} {request.url}")
-            
             page.on("request", on_request)
             
             # Main page loading
