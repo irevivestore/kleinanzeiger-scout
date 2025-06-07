@@ -53,17 +53,24 @@ def scrape_ads(
         page = context.new_page()
         page.goto(url, timeout=60000)
 
-        try:
-            page.wait_for_selector("article[data-testid='ad-list-item']", timeout=10000)
-        except:
-            log("[⚠️] Keine Anzeigen geladen oder falscher Selektor.")
-            browser.close()
-            return []
-
-        eintraege = page.locator("article[data-testid='ad-list-item']")
-        count = eintraege.count()
-        log(f"[📄] {count} Anzeigen gefunden.")
-
+try:
+    # Erst versuchen, den neuen Selektor zu verwenden
+    page.wait_for_selector("article[data-testid='ad-list-item']", timeout=5000)
+    eintraege = page.locator("article[data-testid='ad-list-item']")
+except:
+    log("[ℹ️] Neuer Selektor funktioniert nicht, versuche Fallback 'article.aditem'")
+    try:
+        page.wait_for_selector("article.aditem", timeout=5000)
+        eintraege = page.locator("article.aditem")
+    except:
+        log("[❌] Kein bekannter Anzeigenselektor gefunden. Seite evtl. verändert.")
+        # Debug-Ausgabe (HTML zur manuellen Inspektion)
+        html_debug = page.inner_html("body")
+        with open("debug_kleinanzeigen.html", "w", encoding="utf-8") as f:
+            f.write(html_debug)
+        log("[📝] HTML gespeichert in debug_kleinanzeigen.html")
+        browser.close()
+        return []
         for i in range(count):
             try:
                 entry = eintraege.nth(i)
