@@ -12,7 +12,7 @@ def scrape_ads(
     max_price=1500,
     nur_versand=False,
     nur_angebote=True,
-    debug=True,  # 🟢 Standardwert auf True gesetzt
+    debug=True,
     config=None,
     log=None
 ):
@@ -24,27 +24,24 @@ def scrape_ads(
         }
 
     if log is None:
-        def log(x): pass  # 🔄 Fallback-Logger
+        def log(x): pass
 
     base_url = "https://www.kleinanzeigen.de"
-    kategorie = "handy-telekom" if nur_versand else ""
-
-    # 🔧 Korrektur Linkaufbau: s-anzeige:angebote statt s/anzeige:angebote
     pfadteile = []
+
     if nur_angebote:
         pfadteile.append("s-anzeige:angebote")
     else:
-        pfadteile.append("s")  # fallback, falls Angebote nicht gefiltert
+        pfadteile.append("s")  # Fallback
 
-    if kategorie:
-        pfadteile.append(f"-{kategorie}")
     pfadteile.append(f"preis:{min_price}:{max_price}")
     pfadteile.append(quote(modell))
     pfadteile.append("k0")
 
-    url = f"{base_url}/{'/'.join(pfadteile)}"
+    pfad = "/".join(pfadteile)
+    url = f"{base_url}/{pfad}"
     if nur_versand:
-        url += "c173+handy_telekom.versand_s:ja"
+        url += "?versand_s=ja"
 
     log(f"[🔍] Starte Suche unter: {url}")
 
@@ -55,9 +52,15 @@ def scrape_ads(
         context = browser.new_context()
         page = context.new_page()
         page.goto(url, timeout=60000)
-        page.wait_for_timeout(3000)
 
-        eintraege = page.locator("article.aditem")
+        try:
+            page.wait_for_selector("article[data-testid='ad-list-item']", timeout=10000)
+        except:
+            log("[⚠️] Keine Anzeigen geladen oder falscher Selektor.")
+            browser.close()
+            return []
+
+        eintraege = page.locator("article[data-testid='ad-list-item']")
         count = eintraege.count()
         log(f"[📄] {count} Anzeigen gefunden.")
 
@@ -72,12 +75,13 @@ def scrape_ads(
 
                 full_link = urljoin(base_url, custom_href)
 
-                title_el = entry.locator("h2.text-module-begin a")
+                title_el = entry.locator("h2 a")
                 title = title_el.inner_text().strip() if title_el else "Unbekannter Titel"
 
-                preis_el = entry.locator(".aditem-main--middle--price-shipping--price")
+                preis_el = entry.locator(".aditem-main--middle--price-shipping--price, .aditem-main--middle--price")
                 preis_text = preis_el.inner_text().strip() if preis_el else ""
                 preis_text = preis_text.replace("€", "").replace(".", "").replace(",", "").strip()
+
                 try:
                     price = int(re.findall(r"\d+", preis_text)[0])
                 except (IndexError, ValueError):
@@ -86,7 +90,7 @@ def scrape_ads(
                 image_el = entry.locator("img")
                 image_url = image_el.get_attribute("src") if image_el else ""
 
-                # Detailseite öffnen, um Beschreibung zu laden
+                # Detailseite laden für Beschreibung
                 detail_page = context.new_page()
                 detail_page.goto(full_link, timeout=60000)
                 detail_page.wait_for_timeout(3000)
