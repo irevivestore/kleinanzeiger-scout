@@ -83,14 +83,22 @@ def scrape_ads(
                 entry = eintraege.nth(i)
 
                 ad_id = entry.get_attribute("data-adid")
+
+                # Versuche zuerst data-custom-href
                 custom_href = entry.get_attribute("data-custom-href")
+                if not custom_href or not custom_href.startswith("/s-anzeige/"):
+                    # Alternativ versuche den ersten <a href="...">
+                    href = entry.locator("a").first.get_attribute("href")
+                    if href and href.startswith("/s-anzeige/"):
+                        custom_href = href
+
                 if not custom_href or not custom_href.startswith("/s-anzeige/"):
                     log(f"[⚠️] Anzeige {i+1} übersprungen: Kein gültiger Link.")
                     continue
 
                 full_link = urljoin(base_url, custom_href)
 
-                title_el = entry.locator("h2.text-module-begin a")
+                title_el = entry.locator("h2 a")
                 title = title_el.inner_text().strip() if title_el else "Unbekannter Titel"
 
                 preis_el = entry.locator(".aditem-main--middle--price-shipping--price")
