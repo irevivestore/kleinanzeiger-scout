@@ -74,8 +74,11 @@ def scrape_ads(
                 browser.close()
                 return []
 
-        count = eintraege.count()
-        log(f"[📄] {count} Anzeigen gefunden.")
+count = eintraege.count()
+log(f"[📄] {count} Anzeigen gefunden.")
+
+# Für Tests: Nur die ersten 5 Anzeigen verarbeiten
+count = min(count, 5)
 
         for i in range(count):
             try:
