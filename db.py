@@ -7,7 +7,7 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # Anzeigen-Tabelle (ohne Spalte bewertung zuerst erstellen)
+    # Anzeigen-Tabelle
     c.execute('''
         CREATE TABLE IF NOT EXISTS anzeigen (
             id TEXT PRIMARY KEY,
@@ -18,16 +18,11 @@ def init_db():
             image TEXT,
             versand INTEGER,
             beschreibung TEXT,
+            man_defekt TEXT,
             created_at TEXT,
             updated_at TEXT
         )
     ''')
-
-    # Prüfen, ob Spalte "bewertung" existiert, wenn nicht, hinzufügen
-    c.execute("PRAGMA table_info(anzeigen)")
-    columns = [row[1] for row in c.fetchall()]
-    if "bewertung" not in columns:
-        c.execute("ALTER TABLE anzeigen ADD COLUMN bewertung TEXT")
 
     # Konfigurationstabelle
     c.execute('''
@@ -47,23 +42,22 @@ def save_advert(ad):
     c = conn.cursor()
 
     now = datetime.datetime.now().isoformat()
-    bewertung = ad.get("bewertung", None)
 
     # Prüfen, ob Anzeige bereits vorhanden
     c.execute("SELECT updated_at FROM anzeigen WHERE id = ?", (ad["id"],))
     result = c.fetchone()
 
     if result:
-        # Aktualisieren
+        # Aktualisieren (ohne man_defekt zu überschreiben)
         c.execute('''
             UPDATE anzeigen
-            SET price = ?, updated_at = ?, bewertung = ?
+            SET price = ?, updated_at = ?
             WHERE id = ?
-        ''', (ad["price"], now, bewertung, ad["id"]))
+        ''', (ad["price"], now, ad["id"]))
     else:
         # Neu einfügen
         c.execute('''
-            INSERT INTO anzeigen (id, modell, title, price, link, image, versand, beschreibung, created_at, updated_at, bewertung)
+            INSERT INTO anzeigen (id, modell, title, price, link, image, versand, beschreibung, man_defekt, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             ad["id"],
@@ -74,9 +68,9 @@ def save_advert(ad):
             ad["image"],
             int(ad["versand"]),
             ad["beschreibung"],
+            ad.get("man_defekt", ""),
             now,
-            now,
-            bewertung
+            now
         ))
 
     conn.commit()
@@ -127,3 +121,10 @@ def load_config(modell):
         }
     else:
         return None
+
+def update_manual_defekt(ad_id, defekt):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE anzeigen SET man_defekt = ? WHERE id = ?", (defekt, ad_id))
+    conn.commit()
+    conn.close()
