@@ -1,99 +1,189 @@
-import streamlit as st
-from db import init_db, get_all_adverts_for_model, load_config, save_config, update_manual_defekt
+import re
+import time
+import uuid
+from datetime import datetime
+from urllib.parse import quote, urljoin
+from playwright.sync_api import sync_playwright
 
-# Initialisiere Datenbank (Tabellen erstellen, falls nicht vorhanden)
-init_db()
 
-st.set_page_config(page_title="Kleinanzeigen Analyzer", layout="wide")
+def scrape_ads(
+    modell,
+    min_price=0,
+    max_price=1500,
+    nur_versand=False,
+    nur_angebote=True,
+    debug=True,
+    config=None,
+    log=None
+):
+    if config is None:
+        config = {
+            "verkaufspreis": 600,
+            "wunsch_marge": 100,
+            "reparaturkosten": {}
+        }
 
-st.title("📱 Kleinanzeigen Analyzer")
+    if log is None:
+        def log(x): print(x)
 
-# Modellauswahl
-modell = st.selectbox("iPhone-Modell auswählen", ["iPhone 14 Pro", "iPhone 13", "iPhone 12", "iPhone 11"])
+    base_url = "https://www.kleinanzeigen.de"
+    kategorie = "handy-telekom" if nur_versand else ""
 
-# Debug-Modus
-debug = st.checkbox("🔍 Debug-Modus aktivieren")
-
-# Filter für Nur-Angebote mit Versand
-nur_versand = st.checkbox("Nur Angebote mit Versand anzeigen")
-
-# Anzeigen laden
-anzeigen = get_all_adverts_for_model(modell)
-if nur_versand:
-    anzeigen = [a for a in anzeigen if a["versand"]]
-
-if not anzeigen:
-    st.info("Keine passenden Anzeigen gefunden.")
-    st.stop()
-
-# Konfiguration laden oder neu definieren
-config = load_config(modell)
-
-with st.expander("⚙️ Bewertungsparameter laden oder anpassen", expanded=False):
-    if config:
-        verkaufspreis = st.number_input("📈 Erwarteter Verkaufspreis (€)", value=config["verkaufspreis"])
-        wunsch_marge = st.number_input("💰 Wunsch-Marge (€)", value=config["wunsch_marge"])
-        reparaturkosten = config["reparaturkosten"]
+    pfadteile = []
+    if nur_angebote:
+        pfadteile.append("s-anzeige:angebote")
     else:
-        verkaufspreis = st.number_input("📈 Erwarteter Verkaufspreis (€)", value=450)
-        wunsch_marge = st.number_input("💰 Wunsch-Marge (€)", value=100)
-        reparaturkosten = {}
+        pfadteile.append("s")
 
-    st.markdown("🛠️ Reparaturkosten (Defektname → Preis in €):")
-    raw_input = st.text_area("Format: display=150,battery=120,back=90", value=",".join(f"{k}={v}" for k, v in reparaturkosten.items()))
-    try:
-        reparaturkosten = {k.strip(): int(v.strip()) for k, v in (x.split("=") for x in raw_input.split(","))}
-        save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten)
-        st.success("Bewertungsparameter gespeichert.")
-    except:
-        st.warning("❌ Formatfehler beim Speichern der Reparaturkosten.")
+    if kategorie:
+        pfadteile.append(f"-{kategorie}")
+    pfadteile.append(f"preis:{min_price}:{max_price}")
+    pfadteile.append(quote(modell))
+    pfadteile.append("k0")
 
-# Bewertungslogik
-def berechne_bewertung(preis, reparatur_typ):
-    rep_kosten = reparaturkosten.get(reparatur_typ, 0)
-    restwert = verkaufspreis - rep_kosten - wunsch_marge
-    return preis <= restwert
+    url = f"{base_url}/{'/'.join(pfadteile)}"
+    if nur_versand:
+        url += "c173+handy_telekom.versand_s:ja"
 
-# Anzeigen-Übersicht
-st.header(f"Anzeigen für {modell} ({len(anzeigen)} Treffer)")
-for ad in anzeigen:
-    with st.expander(f"{ad['title']} – {ad['price']} €", expanded=False):
-        col1, col2 = st.columns([1, 3])
+    log(f"[🔍] Starte Suche unter: {url}")
 
-        with col1:
-            st.image(ad["image"], use_column_width=True)
+    anzeigen = []
 
-        with col2:
-            st.markdown(f"**Preis:** {ad['price']} €")
-            st.markdown(f"**Versand:** {'✅' if ad['versand'] else '❌'}")
-            st.markdown(f"[🔗 Zur Anzeige]({ad['link']})")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+        page.goto(url, timeout=60000)
+        page.wait_for_timeout(3000)
 
-            # Beschreibung anzeigen
-            with st.expander("📝 Beschreibung"):
-                st.write(ad["beschreibung"])
+        try:
+            page.wait_for_selector("article[data-testid='ad-list-item']", timeout=5000)
+            eintraege = page.locator("article[data-testid='ad-list-item']")
+        except:
+            log("[ℹ️] Neuer Selektor funktioniert nicht, versuche Fallback 'article.aditem'")
+            try:
+                page.wait_for_selector("article.aditem", timeout=5000)
+                eintraege = page.locator("article.aditem")
+                log("[✅] Fallback-Selektor verwendet: article.aditem")
+            except:
+                log("[❌] Kein bekannter Anzeigenselektor gefunden.")
+                html_debug = page.inner_html("body")
+                with open("debug_kleinanzeigen.html", "w", encoding="utf-8") as f:
+                    f.write(html_debug)
+                log("[📝] HTML gespeichert in debug_kleinanzeigen.html")
+                browser.close()
+                return []
 
-            # Dropdown zur manuellen Defektauswahl
-            defektauswahl = st.selectbox(
-                "Manueller Defekt:",
-                options=["", *reparaturkosten.keys()],
-                index=0 if ad["man_defekt"] == "" else list(reparaturkosten.keys()).index(ad["man_defekt"]) + 1,
-                key=f"defekt_{ad['id']}"
-            )
+        count = eintraege.count()
+        log(f"[📄] {count} Anzeigen gefunden.")
 
-            # Bei Änderung speichern und neu laden
-            if defektauswahl != ad["man_defekt"]:
-                update_manual_defekt(ad["id"], defektauswahl)
-                st.rerun()
+        for i in range(count):
+            try:
+                entry = eintraege.nth(i)
+                ad_id = entry.get_attribute("data-adid")
 
-            # Bewertung anzeigen
-            if defektauswahl:
-                if berechne_bewertung(ad["price"], defektauswahl):
-                    st.markdown("✅ **Kaufpreis ist wirtschaftlich sinnvoll**")
+                custom_href = entry.get_attribute("data-custom-href")
+                if not custom_href or not custom_href.startswith("/s-anzeige/"):
+                    href = entry.locator("a").first.get_attribute("href")
+                    if href and href.startswith("/s-anzeige/"):
+                        custom_href = href
+
+                if not custom_href or not custom_href.startswith("/s-anzeige/"):
+                    log(f"[⚠️] Anzeige {i+1} übersprungen: Kein gültiger Link.")
+                    continue
+
+                full_link = urljoin(base_url, custom_href)
+
+                title_el = entry.locator("h2 a")
+                title = title_el.inner_text().strip() if title_el else "Unbekannter Titel"
+
+                preis_el = entry.locator(".aditem-main--middle--price-shipping--price")
+                preis_text = preis_el.inner_text().strip() if preis_el else ""
+                preis_text = preis_text.replace("€", "").replace(".", "").replace(",", "").strip()
+                try:
+                    price = int(re.findall(r"\d+", preis_text)[0])
+                except (IndexError, ValueError):
+                    log(f"[⚠️] Preis konnte nicht gelesen werden bei Anzeige {i+1}: '{preis_text}'")
+                    price = 0
+
+                image_el = entry.locator("img")
+                image_url = image_el.get_attribute("src") if image_el else ""
+
+                # Detailseite öffnen
+                detail_page = context.new_page()
+                detail_page.goto(full_link, timeout=60000)
+                detail_page.wait_for_timeout(3000)
+
+                beschreibung = ""
+                selectors = [
+                    "div[data-testid='ad-detail-description']",
+                    "p[itemprop='description']",
+                    "section[data-testid='description']",
+                    "div[itemprop='description']"
+                ]
+
+                for sel in selectors:
+                    try:
+                        detail_page.wait_for_selector(sel, timeout=3000)
+                        beschreibung_el = detail_page.locator(sel)
+                        if beschreibung_el.count() > 0:
+                            beschreibung = beschreibung_el.first.inner_text().strip()
+                            if beschreibung:
+                                break
+                    except:
+                        continue
+
+                if not beschreibung:
+                    try:
+                        body_text = detail_page.locator("body").inner_text()
+                        match = re.search(r"(Beschreibung|Details|Zustand):\s*(.+)", body_text, re.IGNORECASE)
+                        if match:
+                            beschreibung = match.group(2).strip()
+                    except:
+                        pass
+
+                detail_page.close()
+
+                log(f"[📝] Beschreibung: {beschreibung[:100]}...")
+
+                rep_summe = 0
+                for defekt, kosten in config["reparaturkosten"].items():
+                    if defekt.lower() in beschreibung.lower():
+                        rep_summe += kosten
+
+                max_ek = config["verkaufspreis"] - config["wunsch_marge"] - rep_summe
+
+                if price <= max_ek:
+                    bewertung = "grün"
+                elif price <= max_ek + config["wunsch_marge"] * 0.1:
+                    bewertung = "blau"
                 else:
-                    st.markdown("❌ **Zu teuer für gewünschte Marge**")
-            else:
-                st.info("Bitte einen Defekt auswählen, um eine Bewertung zu sehen.")
+                    bewertung = "rot"
 
-        if debug:
-            st.code(ad)
+                log(f"[📦] {title} | {price} € | Max EK: {max_ek} € | Bewertung: {bewertung}")
 
+                anzeigen.append({
+                    "id": ad_id or str(uuid.uuid5(uuid.NAMESPACE_URL, full_link)),
+                    "modell": modell,
+                    "title": title,
+                    "price": price,
+                    "link": full_link,
+                    "image": image_url,
+                    "versand": nur_versand,
+                    "beschreibung": beschreibung,
+                    "reparaturkosten": rep_summe,
+                    "bewertung": bewertung,
+                    "created_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
+                    "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
+                })
+
+                if debug:
+                    time.sleep(1)
+
+            except Exception as e:
+                log(f"[❌] Fehler bei Anzeige {i+1}: {e}")
+                continue
+
+        browser.close()
+
+    return anzeigen
