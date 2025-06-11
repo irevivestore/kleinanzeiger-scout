@@ -184,4 +184,4 @@ else:
 
                 if st.button(f"💾 Auswahl speichern für Anzeige {anzeige['id']}", key=f"save_man_def_{anzeige['id']}"):
                     update_manual_defekt_keys(anzeige["id"], json.dumps(ausgewählte_defekte))
-                    st.experimental_rerun()
+                   st.rerun()
