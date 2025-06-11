@@ -1,5 +1,8 @@
 import streamlit as st
-from db import get_all_adverts_for_model, load_config, update_manual_defekt
+from db import init_db, get_all_adverts_for_model, load_config, update_manual_defekt
+
+# Datenbank initialisieren
+init_db()
 
 # Modellauswahl
 modell = st.selectbox("iPhone-Modell auswählen", ["iPhone 14 Pro", "iPhone 13", "iPhone 12", "iPhone 11"])
