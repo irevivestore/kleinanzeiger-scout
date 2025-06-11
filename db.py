@@ -1,5 +1,6 @@
 import sqlite3
 import datetime
+import json
 
 DB_PATH = "config.db"
 
@@ -18,7 +19,7 @@ def init_db():
             image TEXT,
             versand INTEGER,
             beschreibung TEXT,
-            man_defekt TEXT,
+            man_defekt_keys TEXT,
             created_at TEXT,
             updated_at TEXT
         )
@@ -44,21 +45,33 @@ def save_advert(ad):
     now = datetime.datetime.now().isoformat()
 
     # Prüfen, ob Anzeige bereits vorhanden
-    c.execute("SELECT updated_at FROM anzeigen WHERE id = ?", (ad["id"],))
+    c.execute("SELECT man_defekt_keys FROM anzeigen WHERE id = ?", (ad["id"],))
     result = c.fetchone()
 
     if result:
-        # Aktualisieren (ohne man_defekt zu überschreiben)
+        # Erhalte bestehenden man_defekt_keys Wert
+        existing_man_defekt_keys = result[0]
+        # Aktualisieren (ohne man_defekt_keys zu überschreiben)
         c.execute('''
             UPDATE anzeigen
-            SET price = ?, updated_at = ?
+            SET price = ?, title = ?, link = ?, image = ?, versand = ?, beschreibung = ?, updated_at = ?
             WHERE id = ?
-        ''', (ad["price"], now, ad["id"]))
+        ''', (
+            ad["price"],
+            ad["title"],
+            ad["link"],
+            ad["image"],
+            int(ad["versand"]),
+            ad["beschreibung"],
+            now,
+            ad["id"]
+        ))
     else:
         # Neu einfügen
         c.execute('''
-            INSERT INTO anzeigen (id, modell, title, price, link, image, versand, beschreibung, man_defekt, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO anzeigen (
+                id, modell, title, price, link, image, versand, beschreibung, man_defekt_keys, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             ad["id"],
             ad["modell"],
@@ -68,7 +81,7 @@ def save_advert(ad):
             ad["image"],
             int(ad["versand"]),
             ad["beschreibung"],
-            ad.get("man_defekt", ""),
+            json.dumps([]),  # leerer Array-String als Standard
             now,
             now
         ))
@@ -122,9 +135,10 @@ def load_config(modell):
     else:
         return None
 
-def update_manual_defekt(ad_id, defekt):
+def update_manual_defekt_keys(ad_id, json_str):
+    """Speichert eine JSON-kodierte Liste der ausgewählten Defektarten in der DB für die Anzeige."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("UPDATE anzeigen SET man_defekt = ? WHERE id = ?", (defekt, ad_id))
+    c.execute("UPDATE anzeigen SET man_defekt_keys = ? WHERE id = ?", (json_str, ad_id))
     conn.commit()
     conn.close()
