@@ -134,7 +134,7 @@ else:
                     <div>
                         <h4>{anzeige['title']}</h4>
                         <b>Preis:</b> {anzeige['price']} €<br>
-                        <b>Bewertung:</b> {anzeige['bewertung']}<br>
+                        <b>Bewertung:</b> {anzeige.get("bewertung", "—")}<br>
                         <a href="{anzeige['link']}" target="_blank">🔗 Anzeige öffnen</a>
                     </div>
                 </div>
