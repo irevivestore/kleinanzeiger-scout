@@ -2,7 +2,7 @@ import streamlit as st
 from scraper import scrape_ads
 from db import (
     init_db, save_advert, get_all_adverts_for_model,
-    load_config, save_config
+    load_config, save_config, update_manual_defekt
 )
 from config import (
     REPARATURKOSTEN_DEFAULT,
@@ -11,6 +11,7 @@ from config import (
 )
 import sys
 from io import StringIO
+import json
 
 # Initialize
 init_db()
@@ -147,3 +148,26 @@ else:
             with st.expander("🔍 Details anzeigen"):
                 st.write(f"**Reparaturkosten:** {reparatur_summe} €")
                 st.write(f"**Max. Einkaufspreis:** {max_ek:.2f} €")
+
+                # Manuelle Defektparameter editierbar machen
+                if anzeige.get("man_defekt"):
+                    try:
+                        man_defekt = json.loads(anzeige["man_defekt"])
+                    except:
+                        man_defekt = reparaturkosten_dict.copy()
+                else:
+                    man_defekt = reparaturkosten_dict.copy()
+
+                st.markdown("### 🛠 Manuelle Defektparameter")
+                for key, wert in man_defekt.items():
+                    man_defekt[key] = st.number_input(
+                        f"{key.capitalize()} (€)",
+                        min_value=0,
+                        value=wert,
+                        step=10,
+                        key=f"man_defekt_{anzeige['id']}_{key}"
+                    )
+
+                if st.button(f"💾 Speichern für Anzeige {anzeige['id']}", key=f"save_man_def_{anzeige['id']}"):
+                    update_manual_defekt(anzeige["id"], json.dumps(man_defekt))
+                    st.success("✅ Manuelle Defektparameter gespeichert!")
