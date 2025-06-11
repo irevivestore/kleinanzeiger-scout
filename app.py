@@ -1,189 +1,150 @@
-import re
-import time
-import uuid
-from datetime import datetime
-from urllib.parse import quote, urljoin
-from playwright.sync_api import sync_playwright
+import streamlit as st
+from scraper import scrape_ads
+from db import (
+init_db, save_advert, get_all_adverts_for_model,
+load_config, save_config
+)
+from config import (
+REPARATURKOSTEN_DEFAULT,
+VERKAUFSPREIS_DEFAULT,
+WUNSCH_MARGE_DEFAULT
+)
+import sys
+from io import StringIO
 
+# Initialize
+init_db()
+st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
+st.title("📱 Kleinanzeigen Scout")
 
-def scrape_ads(
-    modell,
-    min_price=0,
-    max_price=1500,
-    nur_versand=False,
-    nur_angebote=True,
-    debug=True,
-    config=None,
-    log=None
-):
-    if config is None:
-        config = {
-            "verkaufspreis": 600,
-            "wunsch_marge": 100,
-            "reparaturkosten": {}
-        }
+# Setup enhanced logging
+if 'log_buffer' not in st.session_state:
+st.session_state.log_buffer = StringIO()
 
-    if log is None:
-        def log(x): print(x)
+def log(message):
+"""Enhanced logging function"""
+print(message, file=sys.stderr)  # Goes to terminal
+st.session_state.log_buffer.write(message + "\n")
+st.session_state.log_lines.append(message)
+log_area.text_area("🛠 Debug-Ausgaben", 
+value="\n".join(st.session_state.log_lines[-50:]), 
+height=300)
 
-    base_url = "https://www.kleinanzeigen.de"
-    kategorie = "handy-telekom" if nur_versand else ""
+# Session state setup
+if 'log_lines' not in st.session_state:
+st.session_state.log_lines = []
+log_area = st.empty()
 
-    pfadteile = []
-    if nur_angebote:
-        pfadteile.append("s-anzeige:angebote")
-    else:
-        pfadteile.append("s")
+# Model selection
+if "modell" not in st.session_state:
+st.session_state.modell = "iPhone 14 Pro"
+modell = st.text_input("Modell auswählen", value=st.session_state.modell)
+st.session_state.modell = modell
 
-    if kategorie:
-        pfadteile.append(f"-{kategorie}")
-    pfadteile.append(f"preis:{min_price}:{max_price}")
-    pfadteile.append(quote(modell))
-    pfadteile.append("k0")
+# Config loading
+config = load_config(modell) or {
+"verkaufspreis": VERKAUFSPREIS_DEFAULT,
+"wunsch_marge": WUNSCH_MARGE_DEFAULT,
+"reparaturkosten": REPARATURKOSTEN_DEFAULT.copy()
+}
 
-    url = f"{base_url}/{'/'.join(pfadteile)}"
-    if nur_versand:
-        url += "c173+handy_telekom.versand_s:ja"
+# Configuration UI
+with st.expander("⚙️ Erweiterte Bewertungsparameter"):
+verkaufspreis = st.number_input("🔼 Verkaufspreis (€)", 
+min_value=0, 
+value=config["verkaufspreis"], 
+step=10)
+wunsch_marge = st.number_input("🎯 Wunschmarge (€)", 
+min_value=0, 
+value=config["wunsch_marge"], 
+step=10)
 
-    log(f"[🔍] Starte Suche unter: {url}")
+reparaturkosten_dict = {}
+for i, (defekt, kosten) in enumerate(config["reparaturkosten"].items()):
+reparaturkosten_dict[defekt] = st.number_input(
+f"🛠 {defekt.capitalize()} (€)", 
+min_value=0, 
+value=kosten,
+step=10, 
+key=f"rk_{i}"
+)
 
-    anzeigen = []
+if st.button("💾 Konfiguration speichern"):
+save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict)
+st.success("✅ Konfiguration gespeichert")
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
-        page = context.new_page()
-        page.goto(url, timeout=60000)
-        page.wait_for_timeout(3000)
+# Search parameters
+with st.form("filters"):
+col1, col2, col3, col4 = st.columns(4)
+min_preis = col1.number_input("💶 Mindestpreis", min_value=0, value=0)
+max_preis = col2.number_input("💶 Maximalpreis", min_value=0, value=1500)
+nur_versand = col3.checkbox("📦 Nur mit Versand")
+nur_angebote = col4.checkbox("📢 Nur Angebote", value=True)
+submit = st.form_submit_button("🔎 Anzeigen durchsuchen")
 
-        try:
-            page.wait_for_selector("article[data-testid='ad-list-item']", timeout=5000)
-            eintraege = page.locator("article[data-testid='ad-list-item']")
-        except:
-            log("[ℹ️] Neuer Selektor funktioniert nicht, versuche Fallback 'article.aditem'")
-            try:
-                page.wait_for_selector("article.aditem", timeout=5000)
-                eintraege = page.locator("article.aditem")
-                log("[✅] Fallback-Selektor verwendet: article.aditem")
-            except:
-                log("[❌] Kein bekannter Anzeigenselektor gefunden.")
-                html_debug = page.inner_html("body")
-                with open("debug_kleinanzeigen.html", "w", encoding="utf-8") as f:
-                    f.write(html_debug)
-                log("[📝] HTML gespeichert in debug_kleinanzeigen.html")
-                browser.close()
-                return []
+# Debug panel
+with st.expander("📜 System Console Output"):
+st.code(st.session_state.log_buffer.getvalue())
 
-        count = eintraege.count()
-        log(f"[📄] {count} Anzeigen gefunden.")
+# Main search logic
+if submit:
+st.session_state.log_lines.clear()
+st.session_state.log_buffer.seek(0)
+st.session_state.log_buffer.truncate(0)
 
-        for i in range(count):
-            try:
-                entry = eintraege.nth(i)
-                ad_id = entry.get_attribute("data-adid")
+with st.spinner("Suche läuft..."):
+neue_anzeigen = scrape_ads(
+modell,
+min_price=min_preis,
+max_price=max_preis,
+nur_versand=nur_versand,
+nur_angebote=nur_angebote,
+debug=True,
+config={
+"verkaufspreis": verkaufspreis,
+"wunsch_marge": wunsch_marge,
+"reparaturkosten": reparaturkosten_dict,
+},
+log=log
+)
 
-                custom_href = entry.get_attribute("data-custom-href")
-                if not custom_href or not custom_href.startswith("/s-anzeige/"):
-                    href = entry.locator("a").first.get_attribute("href")
-                    if href and href.startswith("/s-anzeige/"):
-                        custom_href = href
+if neue_anzeigen:
+st.success(f"{len(neue_anzeigen)} Anzeigen geladen und gespeichert.")
+for anzeige in neue_anzeigen:
+save_advert(anzeige)
+else:
+st.warning("Keine Anzeigen gefunden oder gespeichert.")
 
-                if not custom_href or not custom_href.startswith("/s-anzeige/"):
-                    log(f"[⚠️] Anzeige {i+1} übersprungen: Kein gültiger Link.")
-                    continue
+# Display results
+alle_anzeigen = get_all_adverts_for_model(modell)
+if not alle_anzeigen:
+st.info("ℹ️ Noch keine Anzeigen gespeichert.")
+else:
+st.success(f"📦 {len(alle_anzeigen)} gespeicherte Anzeigen")
 
-                full_link = urljoin(base_url, custom_href)
+for idx, anzeige in enumerate(alle_anzeigen):
+reparatur_summe = anzeige.get("reparaturkosten", 0)
+max_ek = verkaufspreis - wunsch_marge - reparatur_summe
 
-                title_el = entry.locator("h2 a")
-                title = title_el.inner_text().strip() if title_el else "Unbekannter Titel"
+with st.container():
+st.markdown(f"""
+           <div style='background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 10px;'>
+               <div style='display: flex; gap: 20px;'>
+                   <div><img src="{anzeige['image']}" width="120"/></div>
+                   <div>
+                       <h4>{anzeige['title']}</h4>
+                       <b>Preis:</b> {anzeige['price']} €<br>
+                        <b>Bewertung:</b> {anzeige['bewertung']}<br>
+                        <b>Bewertung:</b> {anzeige.get("bewertung", "—")}<br>
+                       <a href="{anzeige['link']}" target="_blank">🔗 Anzeige öffnen</a>
+                   </div>
+               </div>
+           </div>
+           """, unsafe_allow_html=True)
 
-                preis_el = entry.locator(".aditem-main--middle--price-shipping--price")
-                preis_text = preis_el.inner_text().strip() if preis_el else ""
-                preis_text = preis_text.replace("€", "").replace(".", "").replace(",", "").strip()
-                try:
-                    price = int(re.findall(r"\d+", preis_text)[0])
-                except (IndexError, ValueError):
-                    log(f"[⚠️] Preis konnte nicht gelesen werden bei Anzeige {i+1}: '{preis_text}'")
-                    price = 0
+with st.expander("📄 Beschreibung anzeigen"):
+st.write(anzeige['beschreibung'])
 
-                image_el = entry.locator("img")
-                image_url = image_el.get_attribute("src") if image_el else ""
-
-                # Detailseite öffnen
-                detail_page = context.new_page()
-                detail_page.goto(full_link, timeout=60000)
-                detail_page.wait_for_timeout(3000)
-
-                beschreibung = ""
-                selectors = [
-                    "div[data-testid='ad-detail-description']",
-                    "p[itemprop='description']",
-                    "section[data-testid='description']",
-                    "div[itemprop='description']"
-                ]
-
-                for sel in selectors:
-                    try:
-                        detail_page.wait_for_selector(sel, timeout=3000)
-                        beschreibung_el = detail_page.locator(sel)
-                        if beschreibung_el.count() > 0:
-                            beschreibung = beschreibung_el.first.inner_text().strip()
-                            if beschreibung:
-                                break
-                    except:
-                        continue
-
-                if not beschreibung:
-                    try:
-                        body_text = detail_page.locator("body").inner_text()
-                        match = re.search(r"(Beschreibung|Details|Zustand):\s*(.+)", body_text, re.IGNORECASE)
-                        if match:
-                            beschreibung = match.group(2).strip()
-                    except:
-                        pass
-
-                detail_page.close()
-
-                log(f"[📝] Beschreibung: {beschreibung[:100]}...")
-
-                rep_summe = 0
-                for defekt, kosten in config["reparaturkosten"].items():
-                    if defekt.lower() in beschreibung.lower():
-                        rep_summe += kosten
-
-                max_ek = config["verkaufspreis"] - config["wunsch_marge"] - rep_summe
-
-                if price <= max_ek:
-                    bewertung = "grün"
-                elif price <= max_ek + config["wunsch_marge"] * 0.1:
-                    bewertung = "blau"
-                else:
-                    bewertung = "rot"
-
-                log(f"[📦] {title} | {price} € | Max EK: {max_ek} € | Bewertung: {bewertung}")
-
-                anzeigen.append({
-                    "id": ad_id or str(uuid.uuid5(uuid.NAMESPACE_URL, full_link)),
-                    "modell": modell,
-                    "title": title,
-                    "price": price,
-                    "link": full_link,
-                    "image": image_url,
-                    "versand": nur_versand,
-                    "beschreibung": beschreibung,
-                    "reparaturkosten": rep_summe,
-                    "bewertung": bewertung,
-                    "created_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
-                    "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
-                })
-
-                if debug:
-                    time.sleep(1)
-
-            except Exception as e:
-                log(f"[❌] Fehler bei Anzeige {i+1}: {e}")
-                continue
-
-        browser.close()
-
-    return anzeigen
+with st.expander("🔍 Details anzeigen"):
+st.write(f"**Reparaturkosten:** {reparatur_summe} €")
+st.write(f"**Max. Einkaufspreis:** {max_ek:.2f} €")
