@@ -1,62 +1,149 @@
 import streamlit as st
-from db import load_all_ads
-from datetime import datetime
+from scraper import scrape_ads
+from db import (
+    init_db, save_advert, get_all_adverts_for_model,
+    load_config, save_config
+)
+from config import (
+    REPARATURKOSTEN_DEFAULT,
+    VERKAUFSPREIS_DEFAULT,
+    WUNSCH_MARGE_DEFAULT
+)
+import sys
+from io import StringIO
 
-st.set_page_config(page_title="Kleinanzeigen Analyzer", layout="wide")
+# Initialize
+init_db()
+st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
+st.title("📱 Kleinanzeigen Scout")
 
-st.title("📱 Kleinanzeigen Analyzer – Anzeigenübersicht")
+# Setup enhanced logging
+if 'log_buffer' not in st.session_state:
+    st.session_state.log_buffer = StringIO()
 
-# Benutzerkonfiguration
-verkaufspreis = st.session_state.get("verkaufspreis", 600)
-wunsch_marge = st.session_state.get("wunsch_marge", 100)
-reparaturkosten_dict = st.session_state.get("reparaturkosten", {
-    "Display": 100,
-    "Akku": 50,
-    "Face ID": 80
-})
+def log(message):
+    """Enhanced logging function"""
+    print(message, file=sys.stderr)  # Goes to terminal
+    st.session_state.log_buffer.write(message + "\n")
+    st.session_state.log_lines.append(message)
+    log_area.text_area("🛠 Debug-Ausgaben", 
+                     value="\n".join(st.session_state.log_lines[-50:]), 
+                     height=300)
 
-st.markdown(f"**Verkaufspreis:** {verkaufspreis} € | **Gewünschte Marge:** {wunsch_marge} €")
+# Session state setup
+if 'log_lines' not in st.session_state:
+    st.session_state.log_lines = []
+log_area = st.empty()
 
-alle_anzeigen = load_all_ads()
+# Model selection
+if "modell" not in st.session_state:
+    st.session_state.modell = "iPhone 14 Pro"
+modell = st.text_input("Modell auswählen", value=st.session_state.modell)
+st.session_state.modell = modell
 
+# Config loading
+config = load_config(modell) or {
+    "verkaufspreis": VERKAUFSPREIS_DEFAULT,
+    "wunsch_marge": WUNSCH_MARGE_DEFAULT,
+    "reparaturkosten": REPARATURKOSTEN_DEFAULT.copy()
+}
+
+# Configuration UI
+with st.expander("⚙️ Erweiterte Bewertungsparameter"):
+    verkaufspreis = st.number_input("🔼 Verkaufspreis (€)", 
+                                  min_value=0, 
+                                  value=config["verkaufspreis"], 
+                                  step=10)
+    wunsch_marge = st.number_input("🎯 Wunschmarge (€)", 
+                                  min_value=0, 
+                                  value=config["wunsch_marge"], 
+                                  step=10)
+
+    reparaturkosten_dict = {}
+    for i, (defekt, kosten) in enumerate(config["reparaturkosten"].items()):
+        reparaturkosten_dict[defekt] = st.number_input(
+            f"🛠 {defekt.capitalize()} (€)", 
+            min_value=0, 
+            value=kosten,
+            step=10, 
+            key=f"rk_{i}"
+        )
+
+    if st.button("💾 Konfiguration speichern"):
+        save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict)
+        st.success("✅ Konfiguration gespeichert")
+
+# Search parameters
+with st.form("filters"):
+    col1, col2, col3, col4 = st.columns(4)
+    min_preis = col1.number_input("💶 Mindestpreis", min_value=0, value=0)
+    max_preis = col2.number_input("💶 Maximalpreis", min_value=0, value=1500)
+    nur_versand = col3.checkbox("📦 Nur mit Versand")
+    nur_angebote = col4.checkbox("📢 Nur Angebote", value=True)
+    submit = st.form_submit_button("🔎 Anzeigen durchsuchen")
+
+# Debug panel
+with st.expander("📜 System Console Output"):
+    st.code(st.session_state.log_buffer.getvalue())
+
+# Main search logic
+if submit:
+    st.session_state.log_lines.clear()
+    st.session_state.log_buffer.seek(0)
+    st.session_state.log_buffer.truncate(0)
+    
+    with st.spinner("Suche läuft..."):
+        neue_anzeigen = scrape_ads(
+            modell,
+            min_price=min_preis,
+            max_price=max_preis,
+            nur_versand=nur_versand,
+            nur_angebote=nur_angebote,
+            debug=True,
+            config={
+                "verkaufspreis": verkaufspreis,
+                "wunsch_marge": wunsch_marge,
+                "reparaturkosten": reparaturkosten_dict,
+            },
+            log=log
+        )
+    
+    if neue_anzeigen:
+        st.success(f"{len(neue_anzeigen)} Anzeigen geladen und gespeichert.")
+        for anzeige in neue_anzeigen:
+            save_advert(anzeige)
+    else:
+        st.warning("Keine Anzeigen gefunden oder gespeichert.")
+
+# Display results
+alle_anzeigen = get_all_adverts_for_model(modell)
 if not alle_anzeigen:
-    st.info("Es wurden noch keine Anzeigen gespeichert.")
+    st.info("ℹ️ Noch keine Anzeigen gespeichert.")
 else:
-    for ad in alle_anzeigen:
-        with st.expander(f"{ad['title']} – {ad['price']} €"):
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                st.image(ad["image"], width=150)
-                st.markdown(f"[🌐 Zur Anzeige]({ad['link']})", unsafe_allow_html=True)
-                st.markdown(f"📅 Erstellt: {ad['created_at']}  \n♻️ Aktualisiert: {ad['updated_at']}")
+    st.success(f"📦 {len(alle_anzeigen)} gespeicherte Anzeigen")
+    
+    for idx, anzeige in enumerate(alle_anzeigen):
+        reparatur_summe = anzeige.get("reparaturkosten", 0)
+        max_ek = verkaufspreis - wunsch_marge - reparatur_summe
 
-            with col2:
-                st.markdown(f"**Beschreibung:**")
-                st.text_area("",
-                             value=ad.get("beschreibung", ""),
-                             height=150,
-                             key=f"desc_{ad['id']}",
-                             disabled=True)
+        with st.container():
+            st.markdown(f"""
+            <div style='background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 10px;'>
+                <div style='display: flex; gap: 20px;'>
+                    <div><img src="{anzeige['image']}" width="120"/></div>
+                    <div>
+                        <h4>{anzeige['title']}</h4>
+                        <b>Preis:</b> {anzeige['price']} €<br>
+                        <b>Bewertung:</b> {anzeige.get("bewertung", "—")}<br>
+                        <a href="{anzeige['link']}" target="_blank">🔗 Anzeige öffnen</a>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-                defektauswahl = st.multiselect(
-                    "🛠️ Manuelle Defekte auswählen:",
-                    options=list(reparaturkosten_dict.keys()),
-                    default=[],
-                    key=f"defekte_{ad['id']}"
-                )
+            with st.expander("📄 Beschreibung anzeigen"):
+                st.write(anzeige['beschreibung'])
 
-                manuelle_rep_kosten = sum(reparaturkosten_dict.get(d, 0) for d in defektauswahl)
-                max_ek = verkaufspreis - wunsch_marge - manuelle_rep_kosten
-
-                if ad["price"] <= max_ek:
-                    bewertung = "✅ **GRÜN** (geeignet)"
-                elif ad["price"] <= max_ek + wunsch_marge * 0.1:
-                    bewertung = "🟦 **BLAU** (Grenzfall)"
-                else:
-                    bewertung = "❌ **ROT** (zu teuer)"
-
-                st.markdown("---")
-                st.markdown(f"💰 **Preis:** {ad['price']} €")
-                st.markdown(f"🛠️ **Reparaturkosten (manuell):** {manuelle_rep_kosten} €")
-                st.markdown(f"📉 **Max. Einkaufspreis:** {max_ek} €")
-                st.markdown(f"🎯 **Bewertung:** {bewertung}")
+            with st.expander("🔍 Details anzeigen"):
+                st.write(f"**Reparaturkosten:** {reparatur_summe} €")
+                st.write(f"**Max. Einkaufspreis:** {max_ek:.2f} €")
