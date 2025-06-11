@@ -158,4 +158,35 @@ def scrape_ads(
 
                 if price <= max_ek:
                     bewertung = "grün"
-                elif price <= max
+                elif price <= max_ek + config["wunsch_marge"] * 0.1:
+                    bewertung = "blau"
+                else:
+                    bewertung = "rot"
+
+                log(f"[📦] {title} | {price} € | Max EK: {max_ek} € | Bewertung: {bewertung}")
+
+                anzeigen.append({
+                    "id": ad_id or str(uuid.uuid5(uuid.NAMESPACE_URL, full_link)),
+                    "modell": modell,
+                    "title": title,
+                    "price": price,
+                    "link": full_link,
+                    "image": image_url,
+                    "versand": nur_versand,
+                    "beschreibung": beschreibung,
+                    "reparaturkosten": rep_summe,
+                    "bewertung": bewertung,
+                    "created_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
+                    "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
+                })
+
+                if debug:
+                    time.sleep(1)
+
+            except Exception as e:
+                log(f"[❌] Fehler bei Anzeige {i+1}: {e}")
+                continue
+
+        browser.close()
+
+    return anzeigen
