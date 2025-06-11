@@ -1,5 +1,5 @@
 import streamlit as st
-from db import int_db, get_all_adverts_for_model, load_config, update_manual_defekt
+from db import init_db, get_all_adverts_for_model, load_config, update_manual_defekt
 
 # Datenbank initialisieren
 init_db()
@@ -65,4 +65,3 @@ for ad in anzeigen:
                     st.markdown("❌ **Zu teuer für gewünschte Marge**")
             else:
                 st.info("Bitte einen Defekt auswählen, um eine Bewertung zu sehen.")
-
