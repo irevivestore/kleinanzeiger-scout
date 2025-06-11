@@ -1,126 +1,114 @@
-# app.py
-
 import streamlit as st
-import json
+import sqlite3
 import os
+from scraper import scrape_ads
 from datetime import datetime
-from scraper import scrape_ads, lade_anzeigen
 
-# === Hilfsfunktionen ===
-def log(msg):
-    timestamp = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-    st.session_state.debug_log += f"[{timestamp}] {msg}\n"
+# Datenbank initialisieren
+DB_FILE = "anzeigen.db"
+conn = sqlite3.connect(DB_FILE)
+c = conn.cursor()
+c.execute('''CREATE TABLE IF NOT EXISTS anzeigen (
+    id TEXT PRIMARY KEY,
+    modell TEXT,
+    title TEXT,
+    price INTEGER,
+    link TEXT,
+    image TEXT,
+    versand INTEGER,
+    beschreibung TEXT,
+    reparaturkosten INTEGER,
+    bewertung TEXT,
+    created_at TEXT,
+    updated_at TEXT
+)''')
+conn.commit()
 
-def save_config():
-    config = {
-        "verkaufspreis": st.session_state.verkaufspreis,
-        "wunsch_marge": st.session_state.wunsch_marge,
-        "reparaturkosten": {
-            "display": st.session_state.reparatur_display,
-            "backcover": st.session_state.reparatur_backcover,
-            "akku": st.session_state.reparatur_akku,
-            "kamera": st.session_state.reparatur_kamera,
+st.set_page_config(page_title="Kleinanzeigen Analyzer", layout="wide")
+
+st.title("📱 Kleinanzeigen Analyzer")
+
+# Seitenleiste – Einstellungen
+with st.sidebar:
+    st.header("🔧 Einstellungen")
+    modell = st.text_input("Modell", "iPhone 14 Pro")
+    verkaufspreis = st.number_input("Verkaufspreis (€)", 100, 2000, 600)
+    wunsch_marge = st.number_input("Gewünschte Marge (€)", 10, 1000, 100)
+
+    st.markdown("**Reparaturkosten (€)**")
+    display_defekt = st.number_input("Displaybruch", 0, 500, 0)
+    akku_defekt = st.number_input("Akku defekt", 0, 300, 0)
+    faceid_defekt = st.number_input("FaceID defekt", 0, 300, 0)
+
+    if st.button("🔄 Neue Anzeigen abrufen"):
+        config = {
+            "verkaufspreis": verkaufspreis,
+            "wunsch_marge": wunsch_marge,
+            "reparaturkosten": {
+                "display": display_defekt,
+                "akku": akku_defekt,
+                "faceid": faceid_defekt
+            }
         }
-    }
-    with open("config.json", "w") as f:
-        json.dump(config, f)
-    log("Konfiguration gespeichert.")
 
-def load_config():
-    if os.path.exists("config.json"):
-        with open("config.json", "r") as f:
-            config = json.load(f)
-            st.session_state.verkaufspreis = config.get("verkaufspreis", 500)
-            st.session_state.wunsch_marge = config.get("wunsch_marge", 100)
-            st.session_state.reparatur_display = config.get("reparaturkosten", {}).get("display", 100)
-            st.session_state.reparatur_backcover = config.get("reparaturkosten", {}).get("backcover", 60)
-            st.session_state.reparatur_akku = config.get("reparaturkosten", {}).get("akku", 40)
-            st.session_state.reparatur_kamera = config.get("reparaturkosten", {}).get("kamera", 80)
-            log("Konfiguration geladen.")
-    else:
-        log("Keine gespeicherte Konfiguration gefunden.")
+        neue_anzeigen = scrape_ads(
+            modell=modell,
+            min_price=100,
+            max_price=verkaufspreis,
+            nur_versand=True,
+            nur_angebote=True,
+            debug=False,
+            config=config,
+            log=lambda x: st.info(x)
+        )
 
-def berechne_max_preis(verkaufspreis, wunsch_marge, defekte, reparaturkosten):
-    kosten = sum(reparaturkosten[d] for d in defekte)
-    return verkaufspreis - wunsch_marge - kosten
+        inserted_count = 0
+        for ad in neue_anzeigen:
+            # Einfügen, falls id noch nicht existiert
+            c.execute("SELECT COUNT(*) FROM anzeigen WHERE id = ?", (ad["id"],))
+            if c.fetchone()[0] == 0:
+                c.execute('''INSERT INTO anzeigen (
+                    id, modell, title, price, link, image, versand,
+                    beschreibung, reparaturkosten, bewertung,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (
+                    ad["id"], ad["modell"], ad["title"], ad["price"], ad["link"],
+                    ad["image"], int(ad["versand"]), ad["beschreibung"],
+                    ad["reparaturkosten"], ad["bewertung"],
+                    ad["created_at"], ad["updated_at"]
+                ))
+                inserted_count += 1
 
-def parse_defekte_dropdown(text):
-    return [d for d in text if d != "Keiner"]
+        conn.commit()
+        st.success(f"{inserted_count} neue Anzeige(n) gespeichert.")
 
-# === Initialisierung ===
-st.set_page_config("Kleinanzeigen Analyzer", layout="wide")
-if "debug_log" not in st.session_state:
-    st.session_state.debug_log = ""
+# Anzeigen laden
+c.execute("SELECT * FROM anzeigen WHERE modell = ? ORDER BY updated_at DESC", (modell,))
+rows = c.fetchall()
 
-# === Sidebar Konfiguration ===
-st.sidebar.header("⚙️ Bewertungs-Konfiguration")
-load_config()
+farbe_map = {"grün": "#d4edda", "blau": "#cce5ff", "rot": "#f8d7da"}
 
-with st.sidebar.form("config_form"):
-    st.number_input("💰 Geplanter Verkaufspreis (€)", min_value=0, step=10, key="verkaufspreis")
-    st.number_input("📈 Wunschmarge (€)", min_value=0, step=10, key="wunsch_marge")
-    st.number_input("💥 Displayreparatur (€)", min_value=0, step=10, key="reparatur_display")
-    st.number_input("🔋 Akkutausch (€)", min_value=0, step=10, key="reparatur_akku")
-    st.number_input("📷 Kameratausch (€)", min_value=0, step=10, key="reparatur_kamera")
-    st.number_input("📦 Backcover (€)", min_value=0, step=10, key="reparatur_backcover")
-    speichern = st.form_submit_button("💾 Konfiguration speichern", on_click=save_config)
+st.subheader(f"📦 Ergebnisse für '{modell}' ({len(rows)} Einträge)")
 
-# === Formular: Filterparameter ===
-st.header("📋 Anzeige-Filter und Scraping")
-with st.form("filter_form"):
-    modell = st.selectbox("📱 iPhone Modell", ["iPhone 14 Pro", "iPhone 13", "iPhone 12", "iPhone 11"])
-    min_price = st.number_input("💶 Mindestpreis", value=100, step=10)
-    max_price = st.number_input("💶 Maximalpreis", value=350, step=10)
-    nur_angebote = st.checkbox("Nur Angebote (keine Gesuche)", value=True)
-    nur_versand = st.checkbox("Nur mit Versandoption", value=True)
-    debug = st.checkbox("🔧 Debug-Modus aktivieren", value=False)
-    scrape_button = st.form_submit_button("🔍 Jetzt Anzeigen suchen")
+for row in rows:
+    ad_id, modell, title, price, link, image, versand, beschreibung, repkosten, bewertung, created, updated = row
+    farbe = farbe_map.get(bewertung, "#ffffff")
 
-# === Scrape starten ===
-if scrape_button:
-    log("Starte Scraping ...")
-    scrape_ads(modell, min_price, max_price, nur_angebote, nur_versand, debug)
-    log("Scraping abgeschlossen.")
-
-# === Anzeigen laden und anzeigen ===
-st.header("📦 Ergebnisse")
-anzeigen = lade_anzeigen()
-reparaturkosten = {
-    "display": st.session_state.reparatur_display,
-    "akku": st.session_state.reparatur_akku,
-    "kamera": st.session_state.reparatur_kamera,
-    "backcover": st.session_state.reparatur_backcover,
-}
-
-defekte_optionen = ["Keiner", "display", "akku", "kamera", "backcover"]
-
-for i, anzeige in enumerate(anzeigen):
-    with st.expander(f"{anzeige['title']} – {anzeige['price']} €", expanded=False):
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            st.markdown(f"**Link:** [{anzeige['url']}]({anzeige['url']})")
-            st.markdown(f"**Beschreibung:** {anzeige['description']}")
-            st.markdown(f"**Preis:** {anzeige['price']} €")
-            st.markdown(f"**Stand:** {anzeige['timestamp_erfasst']} – {anzeige['timestamp_geändert']}")
-        with col2:
-            def_key = f"defekte_{i}"
-            if def_key not in st.session_state:
-                st.session_state[def_key] = ["Keiner"]
-            selected_defekte = st.multiselect(
-                "🛠 Manuelle Defekte wählen", defekte_optionen, default=st.session_state[def_key], key=def_key
-            )
-            st.session_state[def_key] = selected_defekte
-
-            defekte = parse_defekte_dropdown(selected_defekte)
-            max_preis = berechne_max_preis(
-                st.session_state.verkaufspreis,
-                st.session_state.wunsch_marge,
-                defekte,
-                reparaturkosten
-            )
-            st.metric("📉 Max. Einkaufspreis", f"{max_preis:.2f} €")
-
-# === Debug-Log ===
-if debug:
-    st.header("📝 Debug Log")
-    st.text_area("Protokoll", value=st.session_state.debug_log, height=300)
+    with st.container():
+        st.markdown(
+            f"""
+            <div style="background-color:{farbe};padding:10px;border-radius:10px;margin-bottom:10px;">
+                <h4 style="margin-bottom:5px;">{title}</h4>
+                <p><strong>Preis:</strong> {price} €<br>
+                <strong>Reparaturkosten:</strong> {repkosten} €<br>
+                <strong>Bewertung:</strong> {bewertung}<br>
+                <strong>Erfasst:</strong> {created}</p>
+                <a href="{link}" target="_blank">🔗 Zur Anzeige</a>
+                <details style="margin-top:10px;">
+                    <summary>📄 Beschreibung anzeigen</summary>
+                    <p>{beschreibung}</p>
+                </details>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
