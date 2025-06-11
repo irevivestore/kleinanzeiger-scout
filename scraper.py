@@ -56,7 +56,6 @@ def scrape_ads(
         page.goto(url, timeout=60000)
         page.wait_for_timeout(3000)
 
-        # 🧠 Selektorlogik
         try:
             page.wait_for_selector("article[data-testid='ad-list-item']", timeout=5000)
             eintraege = page.locator("article[data-testid='ad-list-item']")
@@ -87,7 +86,6 @@ def scrape_ads(
                 # Versuche zuerst data-custom-href
                 custom_href = entry.get_attribute("data-custom-href")
                 if not custom_href or not custom_href.startswith("/s-anzeige/"):
-                    # Alternativ versuche den ersten <a href="...">
                     href = entry.locator("a").first.get_attribute("href")
                     if href and href.startswith("/s-anzeige/"):
                         custom_href = href
@@ -119,9 +117,11 @@ def scrape_ads(
                 detail_page.wait_for_timeout(3000)
 
                 try:
-                    beschreibung = detail_page.locator("div[data-testid='description']").inner_text(timeout=3000)
+                    detail_page.wait_for_selector("div[data-testid='ad-detail-description']", timeout=3000)
+                    beschreibung = detail_page.locator("div[data-testid='ad-detail-description']").inner_text()
                 except:
                     beschreibung = ""
+
                 detail_page.close()
 
                 # Reparaturkosten berechnen
