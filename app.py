@@ -2,7 +2,7 @@ import streamlit as st
 from scraper import scrape_ads
 from db import (
     init_db, save_advert, get_all_adverts_for_model,
-    load_config, save_config, update_manual_defekt
+    load_config, save_config, update_manual_defekt_keys
 )
 from config import (
     REPARATURKOSTEN_DEFAULT,
@@ -124,7 +124,20 @@ else:
     st.success(f"📦 {len(alle_anzeigen)} gespeicherte Anzeigen")
     
     for idx, anzeige in enumerate(alle_anzeigen):
-        reparatur_summe = anzeige.get("reparaturkosten", 0)
+        # Lade manuelle ausgewählte Defekte als Liste
+        if anzeige.get("man_defekt_keys"):
+            try:
+                man_defekt_keys = json.loads(anzeige["man_defekt_keys"])
+            except:
+                man_defekt_keys = []
+        else:
+            man_defekt_keys = []
+
+        # Summe Reparaturkosten der ausgewählten Defekte berechnen
+        reparatur_summe = 0
+        for key in man_defekt_keys:
+            reparatur_summe += reparaturkosten_dict.get(key, 0)
+
         max_ek = verkaufspreis - wunsch_marge - reparatur_summe
 
         with st.container():
@@ -146,28 +159,19 @@ else:
                 st.write(anzeige['beschreibung'])
 
             with st.expander("🔍 Details anzeigen"):
+                st.write(f"**Berücksichtigte Defekte:** {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
                 st.write(f"**Reparaturkosten:** {reparatur_summe} €")
                 st.write(f"**Max. Einkaufspreis:** {max_ek:.2f} €")
 
-                # Manuelle Defektparameter editierbar machen
-                if anzeige.get("man_defekt"):
-                    try:
-                        man_defekt = json.loads(anzeige["man_defekt"])
-                    except:
-                        man_defekt = reparaturkosten_dict.copy()
-                else:
-                    man_defekt = reparaturkosten_dict.copy()
+                # Mehrfachauswahl der Defekte per Multiselect
+                alle_defekte = list(reparaturkosten_dict.keys())
+                ausgewählte_defekte = st.multiselect(
+                    "🛠 Defekte auswählen, die berücksichtigt werden sollen:",
+                    options=alle_defekte,
+                    default=man_defekt_keys,
+                    key=f"man_defekt_select_{anzeige['id']}"
+                )
 
-                st.markdown("### 🛠 Manuelle Defektparameter")
-                for key, wert in man_defekt.items():
-                    man_defekt[key] = st.number_input(
-                        f"{key.capitalize()} (€)",
-                        min_value=0,
-                        value=wert,
-                        step=10,
-                        key=f"man_defekt_{anzeige['id']}_{key}"
-                    )
-
-                if st.button(f"💾 Speichern für Anzeige {anzeige['id']}", key=f"save_man_def_{anzeige['id']}"):
-                    update_manual_defekt(anzeige["id"], json.dumps(man_defekt))
-                    st.success("✅ Manuelle Defektparameter gespeichert!")
+                if st.button(f"💾 Auswahl speichern für Anzeige {anzeige['id']}", key=f"save_man_def_{anzeige['id']}"):
+                    update_manual_defekt_keys(anzeige["id"], json.dumps(ausgewählte_defekte))
+                    st.experimental_rerun()
