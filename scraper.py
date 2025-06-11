@@ -80,10 +80,8 @@ def scrape_ads(
         for i in range(count):
             try:
                 entry = eintraege.nth(i)
-
                 ad_id = entry.get_attribute("data-adid")
 
-                # Versuche zuerst data-custom-href
                 custom_href = entry.get_attribute("data-custom-href")
                 if not custom_href or not custom_href.startswith("/s-anzeige/"):
                     href = entry.locator("a").first.get_attribute("href")
@@ -116,15 +114,38 @@ def scrape_ads(
                 detail_page.goto(full_link, timeout=60000)
                 detail_page.wait_for_timeout(3000)
 
-                try:
-                    detail_page.wait_for_selector("div[data-testid='ad-detail-description']", timeout=3000)
-                    beschreibung = detail_page.locator("div[data-testid='ad-detail-description']").inner_text()
-                except:
-                    beschreibung = ""
+                beschreibung = ""
+                selectors = [
+                    "div[data-testid='ad-detail-description']",
+                    "p[itemprop='description']",
+                    "section[data-testid='description']",
+                    "div[itemprop='description']"
+                ]
+
+                for sel in selectors:
+                    try:
+                        detail_page.wait_for_selector(sel, timeout=3000)
+                        beschreibung_el = detail_page.locator(sel)
+                        if beschreibung_el.count() > 0:
+                            beschreibung = beschreibung_el.first.inner_text().strip()
+                            if beschreibung:
+                                break
+                    except:
+                        continue
+
+                if not beschreibung:
+                    try:
+                        body_text = detail_page.locator("body").inner_text()
+                        match = re.search(r"(Beschreibung|Details|Zustand):\s*(.+)", body_text, re.IGNORECASE)
+                        if match:
+                            beschreibung = match.group(2).strip()
+                    except:
+                        pass
 
                 detail_page.close()
 
-                # Reparaturkosten berechnen
+                log(f"[📝] Beschreibung: {beschreibung[:100]}...")
+
                 rep_summe = 0
                 for defekt, kosten in config["reparaturkosten"].items():
                     if defekt.lower() in beschreibung.lower():
