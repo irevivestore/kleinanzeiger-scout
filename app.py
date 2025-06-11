@@ -125,7 +125,7 @@ else:
     for idx, anzeige in enumerate(alle_anzeigen):
         reparatur_summe = anzeige.get("reparaturkosten", 0)
         max_ek = verkaufspreis - wunsch_marge - reparatur_summe
-        
+
         with st.container():
             st.markdown(f"""
             <div style='background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 10px;'>
@@ -140,10 +140,10 @@ else:
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            
+
+            with st.expander("📄 Beschreibung anzeigen"):
+                st.write(anzeige['beschreibung'])
+
             with st.expander("🔍 Details anzeigen"):
-                st.write(f"**Beschreibung:** {anzeige['beschreibung']}")
                 st.write(f"**Reparaturkosten:** {reparatur_summe} €")
                 st.write(f"**Max. Einkaufspreis:** {max_ek:.2f} €")
-
-st.caption("🔧 Debug-Modus aktiviert | Daten werden lokal gespeichert")
