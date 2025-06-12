@@ -15,7 +15,7 @@ from io import StringIO
 import json
 
 # Initialize
-init_db()
+i...init_db()
 st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
 st.title("📱 Kleinanzeigen Scout")
 
@@ -61,14 +61,14 @@ with st.sidebar:
     }
 
     verkaufspreis = st.number_input("🔼 Verkaufspreis (€)", min_value=0, value=config["verkaufspreis"], step=10)
-    wunsch_marge = st.number_input("🎯 Wunschmarge (€)", min_value=0, value=config["wunsch_marge"], step=10)
+    wunsch_marge = st.number_input("🌟 Wunschmarge (€)", min_value=0, value=config["wunsch_marge"], step=10)
 
     reparaturkosten_dict = {}
     for i, (defekt, kosten) in enumerate(config["reparaturkosten"].items()):
         reparaturkosten_dict[defekt] = st.number_input(
             f"🛠 {defekt.capitalize()} (€)", min_value=0, value=kosten, step=10, key=f"rk_{i}")
 
-    if st.button("💾 Konfiguration speichern"):
+    if st.button("📂 Konfiguration speichern"):
         save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict)
         st.success("✅ Konfiguration gespeichert")
 
@@ -77,7 +77,7 @@ with st.sidebar:
         col1, col2 = st.columns(2)
         min_preis = col1.number_input("💶 Mindestpreis", min_value=0, value=0)
         max_preis = col2.number_input("💶 Maximalpreis", min_value=0, value=1500)
-        nur_versand = st.checkbox("📦 Nur mit Versand")
+        nur_versand = st.checkbox("🚞 Nur mit Versand")
         nur_angebote = st.checkbox("📢 Nur Angebote", value=True)
         submit = st.form_submit_button("🔎 Anzeigen durchsuchen")
 
@@ -177,17 +177,17 @@ for anzeige in alle_anzeigen:
                 key=f"man_defekt_select_{anzeige['id']}"
             )
 
-            if st.button(f"💾 Auswahl speichern für Anzeige {anzeige['id']}", key=f"save_man_def_{anzeige['id']}"):
+            if st.button(f"📂 Auswahl speichern für Anzeige {anzeige['id']}", key=f"save_man_def_{anzeige['id']}"):
                 update_manual_defekt_keys(anzeige["id"], json.dumps(ausgewählte_defekte))
                 st.rerun()
 
-            if st.button(f"🗃️ Archivieren", key=f"archive_{anzeige['id']}"):
+            if st.button(f"💃 Archivieren", key=f"archive_{anzeige['id']}"):
                 archive_advert(anzeige["id"])
                 st.success("Anzeige archiviert.")
                 st.rerun()
 
 # Archivierte Anzeigen anzeigen
-with st.expander("🗃️ Archivierte Anzeigen anzeigen"):
+with st.expander("💃 Archivierte Anzeigen anzeigen"):
     for anzeige in archivierte_anzeigen:
         st.markdown(f"""
         <div style='background-color: #efefef; padding: 10px; border-radius: 5px; margin-bottom: 10px;'>
