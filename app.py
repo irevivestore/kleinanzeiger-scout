@@ -38,7 +38,6 @@ def log(message):
 with st.sidebar:
     st.header("⚙️ Einstellungen")
 
-    # Model selection
     IPHONE_MODELLE = [
         "iPhone X", "iPhone XR", "iPhone XS", "iPhone XS Max",
         "iPhone 11", "iPhone 11 Pro", "iPhone 11 Pro Max",
@@ -53,7 +52,6 @@ with st.sidebar:
     modell = st.selectbox("Modell auswählen", IPHONE_MODELLE, index=IPHONE_MODELLE.index(st.session_state.modell))
     st.session_state.modell = modell
 
-    # Config loading
     config = load_config(modell) or {
         "verkaufspreis": VERKAUFSPREIS_DEFAULT,
         "wunsch_marge": WUNSCH_MARGE_DEFAULT,
@@ -72,7 +70,6 @@ with st.sidebar:
         save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict)
         st.success("✅ Konfiguration gespeichert")
 
-    # Search parameters
     with st.form("filters"):
         col1, col2 = st.columns(2)
         min_preis = col1.number_input("💶 Mindestpreis", min_value=0, value=0)
@@ -85,7 +82,7 @@ with st.sidebar:
 with st.expander("📜 System Console Output"):
     st.code(st.session_state.log_buffer.getvalue())
 
-# Suche durchführen
+# Scrape
 if submit:
     st.session_state.log_lines.clear()
     st.session_state.log_buffer.seek(0)
@@ -118,9 +115,8 @@ if submit:
     else:
         st.warning("Keine neuen, relevanten Anzeigen gefunden.")
 
-# Anzeigen darstellen
-alle_anzeigen = get_all_adverts_for_model(modell)
-archivierte_anzeigen = get_archived_adverts_for_model(modell)
+# Gespeicherte Anzeigen (nicht archivierte)
+alle_anzeigen = [a for a in get_all_adverts_for_model(modell) if not is_advert_archived(a["id"])]
 
 st.subheader("📦 Gespeicherte Anzeigen")
 if not alle_anzeigen:
@@ -181,8 +177,12 @@ for anzeige in alle_anzeigen:
         with st.expander("📄 Beschreibung anzeigen"):
             st.write(anzeige['beschreibung'])
 
-# Archivierte Anzeigen anzeigen
+# Archivierte Anzeigen
+archivierte_anzeigen = get_archived_adverts_for_model(modell)
+
 with st.expander("🗃️ Archivierte Anzeigen anzeigen"):
+    if not archivierte_anzeigen:
+        st.info("ℹ️ Keine archivierten Anzeigen.")
     for anzeige in archivierte_anzeigen:
         st.markdown(f"""
         <div style='background-color: #efefef; padding: 10px; border-radius: 5px; margin-bottom: 10px;'>
