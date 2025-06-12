@@ -147,37 +147,29 @@ for anzeige in alle_anzeigen:
     max_ek = verkaufspreis - wunsch_marge - reparatur_summe
 
     with st.container():
-        st.markdown(f"""
-        <div style='background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 10px;'>
-            <div style='display: flex; gap: 20px;'>
-                <div><img src="{anzeige['image']}" width="120"/></div>
-                <div>
-                    <h4>{anzeige['title']}</h4>
-                    <b>Preis:</b> {anzeige['price']} €<br>
-                    <b>Bewertung:</b> {anzeige.get("bewertung", "—")}<br>
-                    <a href="{anzeige['link']}" target="_blank">🔗 Anzeige öffnen</a>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        with st.expander("📄 Beschreibung anzeigen"):
-            st.write(anzeige['beschreibung'])
-
-        with st.expander("🔍 Details anzeigen"):
-            st.write(f"**Berücksichtigte Defekte:** {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
-            st.write(f"**Reparaturkosten:** {reparatur_summe} €")
-            st.write(f"**Max. Einkaufspreis:** {max_ek:.2f} €")
+        col1, col2, col3 = st.columns([1, 3, 2])
+        with col1:
+            st.image(anzeige['image'], width=120)
+        with col2:
+            st.markdown(f"### {anzeige['title']}")
+            st.markdown(f"**💰 Preis:** {anzeige['price']} €")
+            st.markdown(f"**🔍 Bewertung:** {anzeige.get('bewertung', '—')}")
+            st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
+        with col3:
+            st.markdown("**🛠 Berücksichtigte Defekte:**")
+            st.markdown(", ".join(man_defekt_keys) if man_defekt_keys else "Keine")
+            st.markdown(f"**🔧 Reparaturkosten:** {reparatur_summe} €")
+            st.markdown(f"**💸 Max. Einkaufspreis:** {max_ek:.2f} €")
 
             alle_defekte = list(reparaturkosten_dict.keys())
             ausgewählte_defekte = st.multiselect(
-                "🛠 Defekte auswählen:",
+                "🛠 Defekte wählen:",
                 options=alle_defekte,
                 default=man_defekt_keys,
                 key=f"man_defekt_select_{anzeige['id']}"
             )
 
-            if st.button(f"💾 Auswahl speichern für Anzeige {anzeige['id']}", key=f"save_man_def_{anzeige['id']}"):
+            if st.button(f"💾 Speichern", key=f"save_man_def_{anzeige['id']}"):
                 update_manual_defekt_keys(anzeige["id"], json.dumps(ausgewählte_defekte))
                 st.rerun()
 
@@ -185,6 +177,9 @@ for anzeige in alle_anzeigen:
                 archive_advert(anzeige["id"])
                 st.success("Anzeige archiviert.")
                 st.rerun()
+
+        with st.expander("📄 Beschreibung anzeigen"):
+            st.write(anzeige['beschreibung'])
 
 # Archivierte Anzeigen anzeigen
 with st.expander("🗃️ Archivierte Anzeigen anzeigen"):
@@ -201,5 +196,3 @@ with st.expander("🗃️ Archivierte Anzeigen anzeigen"):
             </div>
         </div>
         """, unsafe_allow_html=True)
-
-
