@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 from urllib.parse import quote, urljoin
 from playwright.sync_api import sync_playwright
+import db  # Dein Datenbankmodul
 
 
 def scrape_ads(
@@ -47,6 +48,10 @@ def scrape_ads(
 
     log(f"[🔍] Starte Suche unter: {url}")
 
+    # EXISTIERENDE ANZEIGEN-IDs laden (inkl. archivierte)
+    bestehende_ids = db.get_all_ad_ids_for_model(modell, include_archived=True)
+    log(f"[ℹ️] Bereits {len(bestehende_ids)} Anzeigen (inkl. archiviert) in DB.")
+
     anzeigen = []
 
     with sync_playwright() as p:
@@ -84,6 +89,13 @@ def scrape_ads(
             try:
                 entry = eintraege.nth(i)
                 ad_id = entry.get_attribute("data-adid")
+                if not ad_id:
+                    ad_id = str(uuid.uuid5(uuid.NAMESPACE_URL, entry.get_attribute("data-custom-href") or ""))
+
+                # Prüfen, ob Anzeige schon in DB ist
+                if ad_id in bestehende_ids:
+                    log(f"[⏭️] Anzeige {ad_id} bereits in DB, übersprungen.")
+                    continue
 
                 custom_href = entry.get_attribute("data-custom-href")
                 if not custom_href or not custom_href.startswith("/s-anzeige/"):
@@ -165,8 +177,8 @@ def scrape_ads(
 
                 log(f"[📦] {title} | {price} € | Max EK: {max_ek} € | Bewertung: {bewertung}")
 
-                anzeigen.append({
-                    "id": ad_id or str(uuid.uuid5(uuid.NAMESPACE_URL, full_link)),
+                ad_data = {
+                    "id": ad_id,
                     "modell": modell,
                     "title": title,
                     "price": price,
@@ -178,7 +190,12 @@ def scrape_ads(
                     "bewertung": bewertung,
                     "created_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
                     "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
-                })
+                }
+
+                # Anzeige in DB speichern
+                db.save_advert(ad_data)
+
+                anzeigen.append(ad_data)
 
                 if debug:
                     time.sleep(1)
