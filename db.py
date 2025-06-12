@@ -8,7 +8,7 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # Anzeigen-Tabelle
+    # Tabelle erstellen, falls sie nicht existiert
     c.execute('''
         CREATE TABLE IF NOT EXISTS anzeigen (
             id TEXT PRIMARY KEY,
@@ -17,15 +17,26 @@ def init_db():
             price INTEGER,
             link TEXT,
             image TEXT,
-            versand INTEGER,
-            beschreibung TEXT,
-            man_defekt_keys TEXT,
-            created_at TEXT,
-            updated_at TEXT
+            versand INTEGER
         )
     ''')
 
-    # Konfigurationstabelle
+    # Neue Spalten prüfen und ggf. ergänzen
+    neue_spalten = {
+        "beschreibung": "TEXT",
+        "man_defekt_keys": "TEXT",
+        "created_at": "TEXT",
+        "updated_at": "TEXT"
+    }
+
+    c.execute("PRAGMA table_info(anzeigen)")
+    bestehende_spalten = [row[1] for row in c.fetchall()]
+
+    for spalte, typ in neue_spalten.items():
+        if spalte not in bestehende_spalten:
+            c.execute(f"ALTER TABLE anzeigen ADD COLUMN {spalte} {typ}")
+
+    # Konfigurationstabelle erstellen
     c.execute('''
         CREATE TABLE IF NOT EXISTS konfigurationen (
             modell TEXT PRIMARY KEY,
@@ -118,27 +129,3 @@ def load_config(modell):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT verkaufspreis, wunsch_marge, reparaturkosten FROM konfigurationen WHERE modell = ?", (modell,))
-    row = c.fetchone()
-    conn.close()
-
-    if row:
-        verkaufspreis, wunsch_marge, rep_string = row
-        try:
-            reparaturkosten = eval(rep_string)
-        except:
-            reparaturkosten = {}
-        return {
-            "verkaufspreis": verkaufspreis,
-            "wunsch_marge": wunsch_marge,
-            "reparaturkosten": reparaturkosten
-        }
-    else:
-        return None
-
-def update_manual_defekt_keys(ad_id, json_str):
-    """Speichert eine JSON-kodierte Liste der ausgewählten Defektarten in der DB für die Anzeige."""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("UPDATE anzeigen SET man_defekt_keys = ? WHERE id = ?", (json_str, ad_id))
-    conn.commit()
-    conn.close()
