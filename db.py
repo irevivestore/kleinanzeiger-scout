@@ -113,6 +113,16 @@ def get_all_adverts_for_model(modell, include_archived=False):
     conn.close()
     return [dict(row) for row in rows]
 
+def get_archived_adverts_for_model(modell):
+    """Liefert alle archivierten Anzeigen zu einem Modell."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM anzeigen WHERE modell = ? AND archived = 1", (modell,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
 def save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
