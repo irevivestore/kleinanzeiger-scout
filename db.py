@@ -171,6 +171,7 @@ def archive_advert(ad_id, archived: bool):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE anzeigen SET archived = ? WHERE id = ?", (1 if archived else 0, ad_id))
+    print(f"[DB] Anzeige {ad_id} archiviert: {archived}")  # Debug-Log
     conn.commit()
     conn.close()
 
