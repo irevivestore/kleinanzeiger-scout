@@ -173,3 +173,14 @@ def archive_advert(ad_id, archived: bool):
     c.execute("UPDATE anzeigen SET archived = ? WHERE id = ?", (1 if archived else 0, ad_id))
     conn.commit()
     conn.close()
+
+def is_advert_archived(ad_id):
+    """Gibt zurück, ob eine Anzeige archiviert ist."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT archived FROM anzeigen WHERE id = ?", (ad_id,))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return row[0] == 1
+    return False  # Falls Anzeige nicht existiert
