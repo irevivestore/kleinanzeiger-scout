@@ -58,15 +58,15 @@ with st.sidebar:
         "reparaturkosten": REPARATURKOSTEN_DEFAULT.copy()
     }
 
-    verkaufspreis = st.number_input("🔼 Verkaufspreis (€)", min_value=0, value=config["verkaufspreis"], step=10)
-    wunsch_marge = st.number_input("🎯 Wunschmarge (€)", min_value=0, value=config["wunsch_marge"], step=10)
+    verkaufspreis = st.number_input("📈 Verkaufspreis (€)", min_value=0, value=config["verkaufspreis"], step=10)
+    wunsch_marge = st.number_input("🌟 Wunschmarge (€)", min_value=0, value=config["wunsch_marge"], step=10)
 
     reparaturkosten_dict = {}
     for i, (defekt, kosten) in enumerate(config["reparaturkosten"].items()):
         reparaturkosten_dict[defekt] = st.number_input(
-            f"🛠 {defekt.capitalize()} (€)", min_value=0, value=kosten, step=10, key=f"rk_{i}")
+            f"🔧 {defekt.capitalize()} (€)", min_value=0, value=kosten, step=10, key=f"rk_{i}")
 
-    if st.button("💾 Konfiguration speichern"):
+    if st.button("📂 Konfiguration speichern"):
         save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict)
         st.success("✅ Konfiguration gespeichert")
 
@@ -152,25 +152,25 @@ for anzeige in alle_anzeigen:
             st.markdown(f"**🔍 Bewertung:** {anzeige.get('bewertung', '—')}")
             st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
         with col3:
-            st.markdown("**🛠 Berücksichtigte Defekte:**")
+            st.markdown("**🔧 Berücksichtigte Defekte:**")
             st.markdown(", ".join(man_defekt_keys) if man_defekt_keys else "Keine")
             st.markdown(f"**🔧 Reparaturkosten:** {reparatur_summe} €")
             st.markdown(f"**💸 Max. Einkaufspreis:** {max_ek:.2f} €")
 
             alle_defekte = list(reparaturkosten_dict.keys())
             ausgewählte_defekte = st.multiselect(
-                "🛠 Defekte wählen:",
+                "🔧 Defekte wählen:",
                 options=alle_defekte,
                 default=man_defekt_keys,
                 key=f"man_defekt_select_{anzeige['id']}"
             )
 
-            if st.button(f"💾 Speichern", key=f"save_man_def_{anzeige['id']}"):
+            if st.button(f"📂 Speichern", key=f"save_man_def_{anzeige['id']}"):
                 update_manual_defekt_keys(anzeige["id"], json.dumps(ausgewählte_defekte))
                 st.rerun()
 
-            if st.button(f"🗃️ Archivieren", key=f"archive_{anzeige['id']}"):
-                archive_advert(anzeige["id"])
+            if st.button(f"💃 Archivieren", key=f"archive_{anzeige['id']}"):
+                archive_advert(anzeige["id"], get_archived_adverts_for_model(modell))
                 st.success("Anzeige archiviert.")
                 st.rerun()
 
@@ -180,7 +180,7 @@ for anzeige in alle_anzeigen:
 # Archivierte Anzeigen
 archivierte_anzeigen = get_archived_adverts_for_model(modell)
 
-with st.expander("🗃️ Archivierte Anzeigen anzeigen"):
+with st.expander("💃 Archivierte Anzeigen anzeigen"):
     if not archivierte_anzeigen:
         st.info("ℹ️ Keine archivierten Anzeigen.")
     for anzeige in archivierte_anzeigen:
