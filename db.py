@@ -2,7 +2,7 @@ import sqlite3
 import datetime
 import json
 
-DB_PATH = "config.db"
+DB_PATH = "/data/config.db"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
