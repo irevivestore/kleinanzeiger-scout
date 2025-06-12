@@ -19,7 +19,7 @@ init_db()
 st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
 st.title("📱 Kleinanzeigen Scout")
 
-# Setup enhanced logging
+# Logging setup
 if 'log_buffer' not in st.session_state:
     st.session_state.log_buffer = StringIO()
 
@@ -34,7 +34,7 @@ def log(message):
     st.session_state.log_lines.append(message)
     log_area.text_area("🛠 Debug-Ausgaben", value="\n".join(st.session_state.log_lines[-50:]), height=300)
 
-# Sidebar UI für Einstellungen
+# Sidebar
 with st.sidebar:
     st.header("⚙️ Einstellungen")
 
@@ -115,7 +115,7 @@ if submit:
     else:
         st.warning("Keine neuen, relevanten Anzeigen gefunden.")
 
-# Gespeicherte Anzeigen (nicht archivierte)
+# Gespeicherte Anzeigen (nicht archiviert)
 alle_anzeigen = [a for a in get_all_adverts_for_model(modell) if not is_advert_archived(a["id"])]
 
 st.subheader("📦 Gespeicherte Anzeigen")
@@ -133,10 +133,8 @@ for anzeige in alle_anzeigen:
             try:
                 man_defekt_keys = json.loads(man_defekt_keys_raw)
                 if not isinstance(man_defekt_keys, list):
-                    log(f"⚠️ Unerwartetes Format: {man_defekt_keys}")
                     man_defekt_keys = []
-            except Exception as e:
-                log(f"❌ JSON Fehler: {e}")
+            except Exception:
                 man_defekt_keys = []
 
     reparatur_summe = sum(reparaturkosten_dict.get(key, 0) for key in man_defekt_keys)
@@ -163,22 +161,20 @@ for anzeige in alle_anzeigen:
 
             alle_defekte = list(reparaturkosten_dict.keys())
             ausgewählte_defekte = st.multiselect(
-                "Defekte wählen:",
+                "🔧 Defekte wählen:",
                 options=alle_defekte,
                 default=man_defekt_keys,
                 key=f"man_defekt_select_{anzeige['id']}"
             )
 
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                if st.button("📂 Speichern", key=f"save_man_def_{anzeige['id']}"):
-                    update_manual_defekt_keys(anzeige["id"], json.dumps(ausgewählte_defekte))
-                    st.rerun()
-            with col_b2:
-                if st.button("💃 Archivieren", key=f"archive_{anzeige['id']}"):
-                    archive_advert(anzeige["id"], True)
-                    st.success("Anzeige archiviert.")
-                    st.rerun()
+            if st.button("📂 Speichern", key=f"save_man_def_{anzeige['id']}"):
+                update_manual_defekt_keys(anzeige["id"], json.dumps(ausgewählte_defekte))
+                st.rerun()
+
+            if st.button("💃 Archivieren", key=f"archive_{anzeige['id']}"):
+                archive_advert(anzeige["id"], True)
+                st.success("Anzeige archiviert.")
+                st.rerun()
 
             with st.expander("📄 Beschreibung anzeigen"):
                 st.markdown(f"<p style='font-size: small;'>{anzeige['beschreibung']}</p>", unsafe_allow_html=True)
@@ -190,18 +186,46 @@ with st.expander("💃 Archivierte Anzeigen anzeigen"):
     if not archivierte_anzeigen:
         st.info("ℹ️ Keine archivierten Anzeigen.")
     for anzeige in archivierte_anzeigen:
+        man_defekt_keys_raw = anzeige.get("man_defekt_keys")
+        man_defekt_keys = []
+
+        if man_defekt_keys_raw:
+            if isinstance(man_defekt_keys_raw, list):
+                man_defekt_keys = man_defekt_keys_raw
+            elif isinstance(man_defekt_keys_raw, str):
+                try:
+                    man_defekt_keys = json.loads(man_defekt_keys_raw)
+                    if not isinstance(man_defekt_keys, list):
+                        man_defekt_keys = []
+                except Exception:
+                    man_defekt_keys = []
+
+        reparatur_summe = sum(reparaturkosten_dict.get(key, 0) for key in man_defekt_keys)
+        max_ek = verkaufspreis - wunsch_marge - reparatur_summe
+        pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
+
         with st.container():
-            col1, col2, col3 = st.columns([1, 3, 1])
+            col1, col2 = st.columns([1, 4])
             with col1:
-                st.image(anzeige['image'], width=120)
+                st.image(anzeige['image'], width=130)
+                st.markdown(
+                    f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
+                    f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
+                    f"📈 Gewinn: <b>{pot_gewinn:.2f} €</b></p>",
+                    unsafe_allow_html=True
+                )
+
             with col2:
-                st.markdown(f"### {anzeige['title']}")
-                st.markdown(f"**💰 Preis:** {anzeige['price']} €")
-                st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
-            with col3:
+                st.markdown(f"<p style='font-size: small;'><b>{anzeige['title']}</b></p>", unsafe_allow_html=True)
+                st.markdown(f"<a href='{anzeige['link']}' target='_blank'>🔗 Anzeige öffnen</a>", unsafe_allow_html=True)
+
+                st.markdown(f"<p style='font-size: small;'>🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}</p>", unsafe_allow_html=True)
+                st.markdown(f"<p style='font-size: small;'>🧾 Reparaturkosten: {reparatur_summe} €</p>", unsafe_allow_html=True)
+
                 if st.button("↩️ Wiederherstellen", key=f"restore_{anzeige['id']}"):
                     archive_advert(anzeige["id"], False)
                     st.success("Anzeige wiederhergestellt!")
                     st.rerun()
-        with st.expander("📄 Beschreibung anzeigen"):
-            st.write(anzeige['beschreibung'])
+
+                with st.expander("📄 Beschreibung anzeigen"):
+                    st.markdown(f"<p style='font-size: small;'>{anzeige['beschreibung']}</p>", unsafe_allow_html=True)
