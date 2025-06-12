@@ -134,11 +134,25 @@ else:
     st.success(f"📦 {len(alle_anzeigen)} gespeicherte Anzeigen")
     
     for idx, anzeige in enumerate(alle_anzeigen):
-        # Lade manuelle ausgewählte Defekte als Liste
-        if anzeige.get("man_defekt_keys"):
-            try:
-                man_defekt_keys = json.loads(anzeige["man_defekt_keys"])
-            except:
+        # 🔍 Lade manuelle ausgewählte Defekte als Liste (robust)
+        man_defekt_keys_raw = anzeige.get("man_defekt_keys")
+        man_defekt_keys = []
+
+        if man_defekt_keys_raw:
+            if isinstance(man_defekt_keys_raw, list):
+                man_defekt_keys = man_defekt_keys_raw
+            elif isinstance(man_defekt_keys_raw, str):
+                try:
+                    man_defekt_keys = json.loads(man_defekt_keys_raw)
+                    if not isinstance(man_defekt_keys, list):
+                        log(f"⚠️ Unerwartetes Format in man_defekt_keys (kein Listentyp): {man_defekt_keys}")
+                        man_defekt_keys = []
+                except Exception as e:
+                    log(f"❌ Fehler beim JSON-Decode von man_defekt_keys bei Anzeige {anzeige['id']}: {e}")
+                    log(f"⬇️ Rohwert war: {man_defekt_keys_raw}")
+                    man_defekt_keys = []
+            else:
+                log(f"⚠️ Unbekannter Typ in man_defekt_keys: {type(man_defekt_keys_raw)}")
                 man_defekt_keys = []
         else:
             man_defekt_keys = []
@@ -184,5 +198,4 @@ else:
 
                 if st.button(f"💾 Auswahl speichern für Anzeige {anzeige['id']}", key=f"save_man_def_{anzeige['id']}"):
                     update_manual_defekt_keys(anzeige["id"], json.dumps(ausgewählte_defekte))
-                
-                st.rerun()
+                    st.rerun()
