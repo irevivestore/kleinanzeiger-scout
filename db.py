@@ -60,9 +60,7 @@ def save_advert(ad):
     result = c.fetchone()
 
     if result:
-        # Erhalte bestehenden man_defekt_keys Wert
         existing_man_defekt_keys = result[0]
-        # Aktualisieren (ohne man_defekt_keys zu überschreiben)
         c.execute('''
             UPDATE anzeigen
             SET price = ?, title = ?, link = ?, image = ?, versand = ?, beschreibung = ?, updated_at = ?
@@ -78,7 +76,6 @@ def save_advert(ad):
             ad["id"]
         ))
     else:
-        # Neu einfügen
         c.execute('''
             INSERT INTO anzeigen (
                 id, modell, title, price, link, image, versand, beschreibung, man_defekt_keys, created_at, updated_at
@@ -92,7 +89,7 @@ def save_advert(ad):
             ad["image"],
             int(ad["versand"]),
             ad["beschreibung"],
-            json.dumps([]),  # leerer Array-String als Standard
+            json.dumps([]),
             now,
             now
         ))
@@ -114,7 +111,6 @@ def save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # Dictionary als String speichern
     rep_string = repr(reparaturkosten_dict)
 
     c.execute('''
@@ -129,3 +125,27 @@ def load_config(modell):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT verkaufspreis, wunsch_marge, reparaturkosten FROM konfigurationen WHERE modell = ?", (modell,))
+    row = c.fetchone()
+    conn.close()
+
+    if row:
+        verkaufspreis, wunsch_marge, rep_string = row
+        try:
+            reparaturkosten = eval(rep_string)
+        except:
+            reparaturkosten = {}
+        return {
+            "verkaufspreis": verkaufspreis,
+            "wunsch_marge": wunsch_marge,
+            "reparaturkosten": reparaturkosten
+        }
+    else:
+        return None
+
+def update_manual_defekt_keys(ad_id, json_str):
+    """Speichert eine JSON-kodierte Liste der ausgewählten Defektarten in der DB für die Anzeige."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE anzeigen SET man_defekt_keys = ? WHERE id = ?", (json_str, ad_id))
+    conn.commit()
+    conn.close()
