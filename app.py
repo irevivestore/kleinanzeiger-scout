@@ -170,7 +170,7 @@ for anzeige in alle_anzeigen:
                 st.rerun()
 
             if st.button(f"💃 Archivieren", key=f"archive_{anzeige['id']}"):
-                archive_advert(anzeige["id"], True)  # ✅ Einfacher Boolean
+                archive_advert(anzeige["id"], True)
                 st.success("Anzeige archiviert.")
                 st.rerun()
 
@@ -184,15 +184,19 @@ with st.expander("💃 Archivierte Anzeigen anzeigen"):
     if not archivierte_anzeigen:
         st.info("ℹ️ Keine archivierten Anzeigen.")
     for anzeige in archivierte_anzeigen:
-        st.markdown(f"""
-        <div style='background-color: #efefef; padding: 10px; border-radius: 5px; margin-bottom: 10px;'>
-            <div style='display: flex; gap: 20px;'>
-                <div><img src="{anzeige['image']}" width="100"/></div>
-                <div>
-                    <h5>{anzeige['title']}</h5>
-                    <b>Preis:</b> {anzeige['price']} €<br>
-                    <a href="{anzeige['link']}" target="_blank">🔗 Anzeige öffnen</a>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.container():
+            col1, col2, col3 = st.columns([1, 3, 1])
+            with col1:
+                st.image(anzeige['image'], width=120)
+            with col2:
+                st.markdown(f"### {anzeige['title']}")
+                st.markdown(f"**💰 Preis:** {anzeige['price']} €")
+                st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
+            with col3:
+                if st.button("↩️ Wiederherstellen", key=f"restore_{anzeige['id']}"):
+                    archive_advert(anzeige["id"], False)
+                    st.success("Anzeige wiederhergestellt!")
+                    st.rerun()
+            
+        with st.expander("📄 Beschreibung anzeigen"):
+            st.write(anzeige['beschreibung'])
