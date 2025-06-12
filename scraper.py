@@ -1,3 +1,4 @@
+# scraper.py
 import re
 import time
 import uuid
@@ -48,7 +49,6 @@ def scrape_ads(
 
     log(f"[🔍] Starte Suche unter: {url}")
 
-    # EXISTIERENDE ANZEIGEN-IDs laden (inkl. archivierte)
     bestehende_ids = db.get_all_ad_ids_for_model(modell, include_archived=True)
     log(f"[ℹ️] Bereits {len(bestehende_ids)} Anzeigen (inkl. archiviert) in DB.")
 
@@ -65,34 +65,23 @@ def scrape_ads(
             page.wait_for_selector("article[data-testid='ad-list-item']", timeout=5000)
             eintraege = page.locator("article[data-testid='ad-list-item']")
         except:
-            log("[ℹ️] Neuer Selektor funktioniert nicht, versuche Fallback 'article.aditem'")
             try:
                 page.wait_for_selector("article.aditem", timeout=5000)
                 eintraege = page.locator("article.aditem")
                 log("[✅] Fallback-Selektor verwendet: article.aditem")
             except:
-                log("[❌] Kein bekannter Anzeigenselektor gefunden.")
-                html_debug = page.inner_html("body")
-                with open("debug_kleinanzeigen.html", "w", encoding="utf-8") as f:
-                    f.write(html_debug)
-                log("[📝] HTML gespeichert in debug_kleinanzeigen.html")
+                log("[❌] Kein Anzeigenselektor gefunden.")
                 browser.close()
                 return []
 
-        count = eintraege.count()
+        count = min(eintraege.count(), 5)
         log(f"[📄] {count} Anzeigen gefunden.")
-
-        # Für Tests: Nur die ersten 5 Anzeigen verarbeiten
-        count = min(count, 5)
 
         for i in range(count):
             try:
                 entry = eintraege.nth(i)
-                ad_id = entry.get_attribute("data-adid")
-                if not ad_id:
-                    ad_id = str(uuid.uuid5(uuid.NAMESPACE_URL, entry.get_attribute("data-custom-href") or ""))
+                ad_id = entry.get_attribute("data-adid") or str(uuid.uuid5(uuid.NAMESPACE_URL, entry.get_attribute("data-custom-href") or ""))
 
-                # Prüfen, ob Anzeige schon in DB ist
                 if ad_id in bestehende_ids:
                     log(f"[⏭️] Anzeige {ad_id} bereits in DB, übersprungen.")
                     continue
@@ -118,17 +107,25 @@ def scrape_ads(
                 try:
                     price = int(re.findall(r"\d+", preis_text)[0])
                 except (IndexError, ValueError):
-                    log(f"[⚠️] Preis konnte nicht gelesen werden bei Anzeige {i+1}: '{preis_text}'")
                     price = 0
 
-                image_el = entry.locator("img")
-                image_url = image_el.get_attribute("src") if image_el else ""
-
-                # Detailseite öffnen
                 detail_page = context.new_page()
                 detail_page.goto(full_link, timeout=60000)
                 detail_page.wait_for_timeout(3000)
 
+                # Alle Bilder sammeln
+                images = []
+                try:
+                    detail_page.wait_for_selector("img", timeout=3000)
+                    img_elements = detail_page.locator("img")
+                    for j in range(img_elements.count()):
+                        img_url = img_elements.nth(j).get_attribute("src")
+                        if img_url and "https://" in img_url and img_url not in images:
+                            images.append(img_url)
+                except:
+                    pass
+
+                # Beschreibung sammeln
                 beschreibung = ""
                 selectors = [
                     "div[data-testid='ad-detail-description']",
@@ -136,7 +133,6 @@ def scrape_ads(
                     "section[data-testid='description']",
                     "div[itemprop='description']"
                 ]
-
                 for sel in selectors:
                     try:
                         detail_page.wait_for_selector(sel, timeout=3000)
@@ -148,18 +144,7 @@ def scrape_ads(
                     except:
                         continue
 
-                if not beschreibung:
-                    try:
-                        body_text = detail_page.locator("body").inner_text()
-                        match = re.search(r"(Beschreibung|Details|Zustand):\s*(.+)", body_text, re.IGNORECASE)
-                        if match:
-                            beschreibung = match.group(2).strip()
-                    except:
-                        pass
-
                 detail_page.close()
-
-                log(f"[📝] Beschreibung: {beschreibung[:100]}...")
 
                 rep_summe = 0
                 for defekt, kosten in config["reparaturkosten"].items():
@@ -175,15 +160,14 @@ def scrape_ads(
                 else:
                     bewertung = "rot"
 
-                log(f"[📦] {title} | {price} € | Max EK: {max_ek} € | Bewertung: {bewertung}")
-
                 ad_data = {
                     "id": ad_id,
                     "modell": modell,
                     "title": title,
                     "price": price,
                     "link": full_link,
-                    "image": image_url,
+                    "image": images[0] if images else "",
+                    "bilder_liste": images,
                     "versand": nur_versand,
                     "beschreibung": beschreibung,
                     "reparaturkosten": rep_summe,
@@ -192,9 +176,7 @@ def scrape_ads(
                     "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
                 }
 
-                # Anzeige in DB speichern
                 db.save_advert(ad_data)
-
                 anzeigen.append(ad_data)
 
                 if debug:
