@@ -19,13 +19,11 @@ init_db()
 st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
 st.title("📱 Kleinanzeigen Scout")
 
-# Logging Setup
+# Logging
 if 'log_buffer' not in st.session_state:
     st.session_state.log_buffer = StringIO()
-
 if 'log_lines' not in st.session_state:
     st.session_state.log_lines = []
-
 log_area = st.empty()
 
 def log(message):
@@ -78,11 +76,11 @@ with st.sidebar:
         nur_angebote = st.checkbox("📢 Nur Angebote", value=True)
         submit = st.form_submit_button("🔎 Anzeigen durchsuchen")
 
-# Debugausgabe
+# Debug-Konsole
 with st.expander("📜 System Console Output"):
     st.code(st.session_state.log_buffer.getvalue())
 
-# Scraping ausführen
+# Scraping
 if submit:
     st.session_state.log_lines.clear()
     st.session_state.log_buffer.seek(0)
@@ -115,7 +113,7 @@ if submit:
     else:
         st.warning("Keine neuen, relevanten Anzeigen gefunden.")
 
-# Gespeicherte Anzeigen anzeigen
+# Gespeicherte (nicht archivierte) Anzeigen
 alle_anzeigen = [a for a in get_all_adverts_for_model(modell) if not is_advert_archived(a["id"])]
 
 st.subheader("📦 Gespeicherte Anzeigen")
@@ -127,34 +125,36 @@ for anzeige in alle_anzeigen:
     man_defekt_keys = []
 
     if man_defekt_keys_raw:
-        try:
-            if isinstance(man_defekt_keys_raw, list):
-                man_defekt_keys = man_defekt_keys_raw
-            else:
+        if isinstance(man_defekt_keys_raw, list):
+            man_defekt_keys = man_defekt_keys_raw
+        elif isinstance(man_defekt_keys_raw, str):
+            try:
                 man_defekt_keys = json.loads(man_defekt_keys_raw)
                 if not isinstance(man_defekt_keys, list):
-                    raise ValueError("Kein Listenformat")
-        except Exception as e:
-            log(f"❌ JSON Fehler: {e}")
-            man_defekt_keys = []
+                    log(f"⚠️ Unerwartetes Format: {man_defekt_keys}")
+                    man_defekt_keys = []
+            except Exception as e:
+                log(f"❌ JSON Fehler: {e}")
+                man_defekt_keys = []
 
     reparatur_summe = sum(reparaturkosten_dict.get(key, 0) for key in man_defekt_keys)
     max_ek = verkaufspreis - wunsch_marge - reparatur_summe
+    pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
 
     with st.container():
         col1, col2, col3 = st.columns([1, 3, 2])
         with col1:
-            st.image(anzeige['image'], width=120)
+            st.markdown(f"**💰 Preis:** {anzeige['price']} €")
+            st.markdown(f"**📉 Max. EK:** {max_ek:.2f} €")
+            st.markdown(f"**📈 Pot. Gewinn:** {pot_gewinn:.2f} €")
         with col2:
             st.markdown(f"### {anzeige['title']}")
-            st.markdown(f"**💰 Preis:** {anzeige['price']} €")
-            st.markdown(f"**🔍 Bewertung:** {anzeige.get('bewertung', '—')}")
             st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
+            st.image(anzeige['image'], width=150)
         with col3:
             st.markdown("**🔧 Berücksichtigte Defekte:**")
             st.markdown(", ".join(man_defekt_keys) if man_defekt_keys else "Keine")
             st.markdown(f"**🔧 Reparaturkosten:** {reparatur_summe} €")
-            st.markdown(f"**💸 Max. Einkaufspreis:** {max_ek:.2f} €")
 
             alle_defekte = list(reparaturkosten_dict.keys())
             ausgewählte_defekte = st.multiselect(
@@ -176,7 +176,7 @@ for anzeige in alle_anzeigen:
         with st.expander("📄 Beschreibung anzeigen"):
             st.write(anzeige['beschreibung'])
 
-# Archivierte Anzeigen anzeigen
+# Archivierte Anzeigen
 archivierte_anzeigen = get_archived_adverts_for_model(modell)
 
 with st.expander("💃 Archivierte Anzeigen anzeigen"):
