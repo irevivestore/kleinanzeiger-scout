@@ -170,7 +170,7 @@ for anzeige in alle_anzeigen:
                 st.rerun()
 
             if st.button(f"💃 Archivieren", key=f"archive_{anzeige['id']}"):
-                archive_advert(anzeige["id"], get_archived_adverts_for_model(modell))
+                archive_advert(anzeige["id"], True)  # ✅ Einfacher Boolean
                 st.success("Anzeige archiviert.")
                 st.rerun()
 
