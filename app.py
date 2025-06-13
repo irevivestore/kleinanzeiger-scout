@@ -1,135 +1,155 @@
 import streamlit as st
-from datetime import datetime
-from utils import load_data, save_rating, archive_advert, get_archived_adverts_for_model
+import sys
+import json
+from io import StringIO
 
-# Seiteneinstellungen
-st.set_page_config(
-    page_title="Kleinanzeigen-Scout",
-    layout="wide",
-    page_icon="📱"
+from scraper import scrape_ads
+from db import (
+    load_ads_from_db,
+    save_ads_to_db,
+    update_ad_in_db,
+    archive_ad,
+    load_archived_ads
+)
+from config import (
+    IPHONE_MODELLE,
+    STANDARD_VERKAUFSPREIS,
+    STANDARD_WUNSCH_MARGE,
+    STANDARD_REPARATURKOSTEN
 )
 
-# Design-Farben
-BACKGROUND_COLOR = "#F4F4F4"
-PRIMARY_COLOR = "#4B6FFF"
-SECONDARY_COLOR = "#00D1B2"
-CARD_BORDER_RADIUS = "15px"
-CARD_SHADOW = "0 4px 12px rgba(0, 0, 0, 0.06)"
+# Initiale App-Konfiguration
+st.set_page_config(
+    page_title="Kleinanzeigen Analyzer",
+    page_icon="📱",
+    layout="wide"
+)
 
-# Custom CSS für modernes Design
-st.markdown(f"""
+# Custom CSS für modernes Styling
+st.markdown("""
     <style>
-        html, body, [class*="css"] {{
-            background-color: {BACKGROUND_COLOR};
-        }}
-        .advert-card {{
-            background-color: white;
-            border-radius: {CARD_BORDER_RADIUS};
+        .st-emotion-cache-zq5wmm, .st-emotion-cache-1avcm0n {
+            padding-top: 2rem;
+        }
+        .ad-box {
+            border: 1px solid #e0e0e0;
             padding: 1rem;
-            margin-bottom: 1.5rem;
-            box-shadow: {CARD_SHADOW};
-        }}
-        .advert-title {{
-            font-size: 1.3rem;
+            border-radius: 0.5rem;
+            background-color: #fafafa;
+            margin-bottom: 1rem;
+        }
+        .ad-header {
             font-weight: bold;
-            color: {PRIMARY_COLOR};
-        }}
-        .advert-price {{
             font-size: 1.1rem;
-            color: #222;
             margin-bottom: 0.5rem;
-        }}
-        .button-archive {{
-            background-color: {SECONDARY_COLOR};
-            color: white;
-            border: none;
-            border-radius: 8px;
-            padding: 6px 14px;
-            margin-right: 10px;
-            cursor: pointer;
-        }}
-        .image-thumbnail {{
-            width: 100%;
-            border-radius: 12px;
-            margin-bottom: 0.7rem;
-            cursor: pointer;
-        }}
+        }
+        .ad-price {
+            color: green;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+        .archived-note {
+            font-style: italic;
+            color: gray;
+        }
     </style>
 """, unsafe_allow_html=True)
 
-# Navigation
+# Sidebar Navigation
+st.sidebar.title("📱 Kleinanzeigen Analyzer")
 seite = st.sidebar.radio("Navigation", ["Anzeigen", "Archiv"])
 
-# Modell-Auswahl
-modell = st.sidebar.selectbox("📱 Modell auswählen", ["iPhone 14 Pro", "iPhone 13", "iPhone 12", "iPhone X"])
+# Session State initialisieren
+if "ads" not in st.session_state:
+    st.session_state.ads = load_ads_from_db()
 
 if seite == "Anzeigen":
-    daten = load_data(modell)
-    if not daten:
-        st.info("ℹ️ Es sind noch keine Anzeigen für dieses Modell verfügbar.")
+    st.title("📋 Neue Anzeigen analysieren")
+
+    # Formular zur Parameter-Eingabe
+    with st.form("parameter_form", clear_on_submit=False):
+        modell = st.selectbox("iPhone-Modell", IPHONE_MODELLE)
+        verkaufspreis = st.number_input("Ø Verkaufspreis (€)", value=STANDARD_VERKAUFSPREIS)
+        wunsch_marge = st.number_input("Gewünschte Marge (€)", value=STANDARD_WUNSCH_MARGE)
+        reparaturkosten = st.number_input("Ø Reparaturkosten (€)", value=STANDARD_REPARATURKOSTEN)
+        debug = st.checkbox("Debug-Modus aktivieren", value=False)
+        submitted = st.form_submit_button("🔍 Anzeigen analysieren")
+
+    if submitted:
+        try:
+            neue_ads = scrape_ads(modell, verkaufspreis, wunsch_marge, reparaturkosten, debug)
+            save_ads_to_db(neue_ads)
+            st.session_state.ads = load_ads_from_db()
+            st.success(f"{len(neue_ads)} neue Anzeigen gespeichert.")
+        except Exception as e:
+            st.error(f"Fehler beim Scraping: {e}")
+
+    st.subheader("🆕 Aktuelle Ergebnisse")
+
+    if not st.session_state.ads:
+        st.info("Keine Anzeigen gefunden. Bitte starte zuerst eine Analyse.")
     else:
-        for eintrag in daten:
+        for ad in st.session_state.ads:
+            if ad.get("archiviert"):
+                continue
+
             with st.container():
-                st.markdown('<div class="advert-card">', unsafe_allow_html=True)
+                st.markdown(f"<div class='ad-box'>", unsafe_allow_html=True)
 
-                col1, col2 = st.columns([1, 2])
-                with col1:
-                    if eintrag["bilder_liste"]:
-                        st.image(eintrag["bilder_liste"][0], use_column_width=True, caption="Bild öffnen für Galerie")
-                        if st.button("🔍 Galerie ansehen", key=f"gallery_{eintrag['id']}"):
-                            with st.expander("📸 Weitere Bilder"):
-                                st.image(eintrag["bilder_liste"], use_column_width=True)
-                    else:
-                        st.write("Kein Bild verfügbar.")
+                cols = st.columns([3, 1])
+                with cols[0]:
+                    st.markdown(f"<div class='ad-header'>{ad['titel']}</div>", unsafe_allow_html=True)
+                    st.markdown(f"[🔗 Zur Anzeige]({ad['url']})")
+                    with st.expander("📄 Beschreibung anzeigen"):
+                        st.write(ad.get("beschreibung", "Keine Beschreibung verfügbar."))
 
-                with col2:
-                    st.markdown(f"<div class='advert-title'>{eintrag['title']}</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div class='advert-price'>{eintrag['price']} €</div>", unsafe_allow_html=True)
-                    st.markdown(f"📍 **Ort:** {eintrag.get('ort', 'Unbekannt')}  \n"
-                                f"🔗 [Zur Anzeige]({eintrag['link']})", unsafe_allow_html=True)
-                    
-                    with st.expander("📄 Beschreibung einblenden"):
-                        st.markdown(eintrag["description"])
+                with cols[1]:
+                    st.markdown(f"<div class='ad-price'>{ad['preis_anzeige']}</div>", unsafe_allow_html=True)
+                    st.write(f"Gesamtbewertung: **{ad['bewertung']}**")
+                    st.write(f"Erfasst am: {ad['erfasst_am']}")
+                    st.write(f"Zuletzt geändert: {ad['geaendert_am']}")
 
-                    # Bewertung setzen
-                    defekt = st.selectbox("Defekt:", ["", "Display", "Akku", "Face-ID", "Kein Defekt"], key=f"defekt_{eintrag['id']}")
-                    zustand = st.selectbox("Zustand:", ["", "Wie neu", "Gut", "Akzeptabel", "Schlecht"], key=f"zustand_{eintrag['id']}")
+                    # Bewertungskriterien
+                    defektauswahl = {
+                        "display_defekt": "Display defekt",
+                        "akku_defekt": "Akku defekt",
+                        "face_id_defekt": "Face ID defekt",
+                        "gehäuse_beschädigt": "Gehäuse beschädigt"
+                    }
+                    for key, label in defektauswahl.items():
+                        new_value = st.checkbox(label, value=ad.get(key, False), key=f"{ad['id']}_{key}")
+                        if new_value != ad.get(key, False):
+                            ad[key] = new_value
+                            update_ad_in_db(ad)
 
-                    if st.button("💾 Bewertung speichern", key=f"save_{eintrag['id']}"):
-                        save_rating(eintrag["id"], defekt, zustand)
-                        st.success("✅ Bewertung gespeichert!")
-
-                    if st.button("🗃️ Archivieren", key=f"archive_{eintrag['id']}"):
-                        archive_advert(eintrag["id"])
-                        st.success("📦 Anzeige archiviert!")
+                    if st.button("🗂️ Archivieren", key=f"archivieren_{ad['id']}"):
+                        archive_ad(ad["id"])
+                        st.session_state.ads = load_ads_from_db()
+                        st.experimental_rerun()
 
                 st.markdown("</div>", unsafe_allow_html=True)
 
 elif seite == "Archiv":
     st.title("📦 Archivierte Anzeigen")
-    archivierte = get_archived_adverts_for_model(modell)
-    if not archivierte:
-        st.info("ℹ️ Keine archivierten Anzeigen.")
+    archivierte_ads = load_archived_ads()
+
+    if not archivierte_ads:
+        st.info("Es sind keine archivierten Anzeigen vorhanden.")
     else:
-        for anzeige in archivierte:
-            with st.container():
-                st.markdown('<div class="advert-card">', unsafe_allow_html=True)
+        for ad in archivierte_ads:
+            st.markdown(f"<div class='ad-box'>", unsafe_allow_html=True)
 
-                col1, col2 = st.columns([1, 2])
-                with col1:
-                    if anzeige["bilder_liste"]:
-                        st.image(anzeige["bilder_liste"][0], use_column_width=True)
-                        with st.expander("📸 Weitere Bilder"):
-                            st.image(anzeige["bilder_liste"], use_column_width=True)
-                    else:
-                        st.write("Kein Bild verfügbar.")
+            cols = st.columns([3, 1])
+            with cols[0]:
+                st.markdown(f"<div class='ad-header'>{ad['titel']}</div>", unsafe_allow_html=True)
+                st.markdown(f"[🔗 Zur Anzeige]({ad['url']})")
+                with st.expander("📄 Beschreibung anzeigen"):
+                    st.write(ad.get("beschreibung", "Keine Beschreibung verfügbar."))
 
-                with col2:
-                    st.markdown(f"<div class='advert-title'>{anzeige['title']}</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div class='advert-price'>{anzeige['price']} €</div>", unsafe_allow_html=True)
-                    st.markdown(f"📍 **Ort:** {anzeige.get('ort', 'Unbekannt')}  \n"
-                                f"🔗 [Zur Anzeige]({anzeige['link']})", unsafe_allow_html=True)
-                    with st.expander("📄 Beschreibung einblenden"):
-                        st.markdown(anzeige["description"])
+            with cols[1]:
+                st.markdown(f"<div class='ad-price'>{ad['preis_anzeige']}</div>", unsafe_allow_html=True)
+                st.write(f"Gesamtbewertung: **{ad['bewertung']}**")
+                st.write(f"Erfasst am: {ad['erfasst_am']}")
+                st.write(f"Archiviert: ✅")
 
-                st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
