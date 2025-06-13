@@ -8,8 +8,7 @@ from db import (
     load_ads_from_db,
     save_ads_to_db,
     update_ad_in_db,
-    archive_ad,
-    load_archived_ads
+    archive_ad
 )
 from config import (
     IPHONE_MODELLE,
