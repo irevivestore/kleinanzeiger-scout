@@ -14,6 +14,8 @@ import sys
 from io import StringIO
 import json
 
+st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
+
 # Custom CSS für "Modern & Clean" Design
 st.markdown("""
 <style>
@@ -49,7 +51,7 @@ h1, h2, h3, h4 {
 
 # Initialisierung
 init_db()
-st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
+
 
 # Navigation
 seite = st.sidebar.radio("📂 Seiten", ["🔍 Aktive Anzeigen", "📁 Archivierte Anzeigen"])
