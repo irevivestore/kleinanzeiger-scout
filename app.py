@@ -5,7 +5,8 @@ from io import StringIO
 
 from scraper import scrape_ads
 from db import (
-    load_ads_from_db,
+    get_all_active_adverts,
+    get_archived_adverts_for_model,
     save_ads_to_db,
     update_ad_in_db,
     archive_ad
@@ -58,16 +59,18 @@ st.markdown("""
 st.sidebar.title("📱 Kleinanzeigen Analyzer")
 seite = st.sidebar.radio("Navigation", ["Anzeigen", "Archiv"])
 
+# Modell-Auswahl für beide Seiten
+modell = st.sidebar.selectbox("Modell wählen", IPHONE_MODELLE)
+
 # Session State initialisieren
 if "ads" not in st.session_state:
-    st.session_state.ads = load_ads_from_db()
+    st.session_state.ads = get_all_active_adverts()
 
 if seite == "Anzeigen":
     st.title("📋 Neue Anzeigen analysieren")
 
     # Formular zur Parameter-Eingabe
     with st.form("parameter_form", clear_on_submit=False):
-        modell = st.selectbox("iPhone-Modell", IPHONE_MODELLE)
         verkaufspreis = st.number_input("Ø Verkaufspreis (€)", value=STANDARD_VERKAUFSPREIS)
         wunsch_marge = st.number_input("Gewünschte Marge (€)", value=STANDARD_WUNSCH_MARGE)
         reparaturkosten = st.number_input("Ø Reparaturkosten (€)", value=STANDARD_REPARATURKOSTEN)
@@ -78,7 +81,7 @@ if seite == "Anzeigen":
         try:
             neue_ads = scrape_ads(modell, verkaufspreis, wunsch_marge, reparaturkosten, debug)
             save_ads_to_db(neue_ads)
-            st.session_state.ads = load_ads_from_db()
+            st.session_state.ads = get_all_active_adverts()
             st.success(f"{len(neue_ads)} neue Anzeigen gespeichert.")
         except Exception as e:
             st.error(f"Fehler beim Scraping: {e}")
@@ -89,7 +92,7 @@ if seite == "Anzeigen":
         st.info("Keine Anzeigen gefunden. Bitte starte zuerst eine Analyse.")
     else:
         for ad in st.session_state.ads:
-            if ad.get("archiviert"):
+            if ad.get("archiviert") or ad.get("modell") != modell:
                 continue
 
             with st.container():
@@ -123,14 +126,15 @@ if seite == "Anzeigen":
 
                     if st.button("🗂️ Archivieren", key=f"archivieren_{ad['id']}"):
                         archive_ad(ad["id"])
-                        st.session_state.ads = load_ads_from_db()
+                        st.session_state.ads = get_all_active_adverts()
                         st.experimental_rerun()
 
                 st.markdown("</div>", unsafe_allow_html=True)
 
 elif seite == "Archiv":
     st.title("📦 Archivierte Anzeigen")
-    archivierte_ads = load_archived_ads()
+
+    archivierte_ads = get_archived_adverts_for_model(modell)
 
     if not archivierte_ads:
         st.info("Es sind keine archivierten Anzeigen vorhanden.")
