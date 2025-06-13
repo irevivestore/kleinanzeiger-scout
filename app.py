@@ -1,238 +1,147 @@
 import streamlit as st
-from scraper import scrape_ads
-from db import (
-    init_db, save_advert, get_all_adverts_for_model,
-    load_config, save_config, update_manual_defekt_keys,
-    archive_advert, get_archived_adverts_for_model, is_advert_archived
-)
-from config import (
-    REPARATURKOSTEN_DEFAULT,
-    VERKAUFSPREIS_DEFAULT,
-    WUNSCH_MARGE_DEFAULT
-)
-import sys
-from io import StringIO
 import json
+import os
+from datetime import datetime
+from PIL import Image
 
-# Initialisierung
-init_db()
-st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
+# ---------- Seiteneinstellungen ----------
+st.set_page_config(page_title="Kleinanzeigen Scout", layout="wide")
 
-# Design Style Injection
+# ---------- Modernes UI-Design einbinden ----------
 st.markdown("""
-<style>
-    html, body {
-        background-color: #F4F4F4;
-    }
-    .stButton>button {
-        background-color: #4B6FFF;
-        color: white;
-        border-radius: 0.5rem;
-        padding: 0.5rem 1rem;
-        border: none;
-    }
-    .stButton>button:hover {
-        background-color: #3A54D4;
-    }
-    .stMultiSelect div[role="combobox"] {
-        background-color: white;
-        border-radius: 0.5rem;
-    }
-    .card {
-        background-color: white;
-        padding: 1.5rem;
-        border-radius: 1rem;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        margin-bottom: 1rem;
-    }
-</style>
+    <style>
+        /* Hintergrund */
+        .main {
+            background-color: #F4F4F4;
+        }
+
+        /* Karten-Design */
+        div[data-testid="stVerticalBlock"] > div:has(div[data-testid="column"]) {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            margin-bottom: 1.5rem;
+        }
+
+        /* Buttons */
+        .stButton > button {
+            background-color: #4B6FFF;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+        }
+        .stButton > button:hover {
+            background-color: #3757f5;
+            color: white;
+        }
+
+        /* Inputs */
+        .stNumberInput input {
+            border-radius: 8px;
+        }
+
+        /* Schrift */
+        h1, h2, h3, h4, h5, h6 {
+            font-family: 'Segoe UI', sans-serif;
+        }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        /* Expander Style */
+        details > summary {
+            font-weight: bold;
+        }
+
+        /* MultiSelect */
+        div[data-baseweb="select"] > div {
+            border-radius: 8px;
+        }
+    </style>
 """, unsafe_allow_html=True)
 
-# Navigation
-seite = st.sidebar.radio("📂 Seiten", ["🔍 Aktive Anzeigen", "📁 Archivierte Anzeigen"])
+# ---------- Daten laden ----------
+def lade_anzeigen(pfad):
+    if os.path.exists(pfad):
+        with open(pfad, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
 
-# Modell-Auswahl
-IPHONE_MODELLE = [
-    "iPhone X", "iPhone XR", "iPhone XS", "iPhone XS Max",
-    "iPhone 11", "iPhone 11 Pro", "iPhone 11 Pro Max",
-    "iPhone 12", "iPhone 12 mini", "iPhone 12 Pro", "iPhone 12 Pro Max",
-    "iPhone 13", "iPhone 13 mini", "iPhone 13 Pro", "iPhone 13 Pro Max",
-    "iPhone 14", "iPhone 14 Plus", "iPhone 14 Pro", "iPhone 14 Pro Max",
-    "iPhone 15", "iPhone 15 Plus", "iPhone 15 Pro", "iPhone 15 Pro Max"
-]
-if "modell" not in st.session_state:
-    st.session_state.modell = "iPhone 14 Pro"
-modell = st.sidebar.selectbox("Modell auswählen", IPHONE_MODELLE, index=IPHONE_MODELLE.index(st.session_state.modell))
-st.session_state.modell = modell
+def speichere_anzeigen(pfad, daten):
+    with open(pfad, "w", encoding="utf-8") as f:
+        json.dump(daten, f, indent=2, ensure_ascii=False)
 
-# Konfiguration laden
-config = load_config(modell) or {
-    "verkaufspreis": VERKAUFSPREIS_DEFAULT,
-    "wunsch_marge": WUNSCH_MARGE_DEFAULT,
-    "reparaturkosten": REPARATURKOSTEN_DEFAULT.copy()
-}
-verkaufspreis = st.sidebar.number_input("📈 Verkaufspreis (€)", min_value=0, value=config["verkaufspreis"], step=10)
-wunsch_marge = st.sidebar.number_input("🌟 Wunschmarge (€)", min_value=0, value=config["wunsch_marge"], step=10)
+# ---------- Bildanzeige ----------
+def zeige_bilder(bilder_liste):
+    if bilder_liste:
+        idx = st.session_state.get("bild_index", 0)
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.image(bilder_liste[idx], use_column_width=True)
+        with col2:
+            if st.button("◀", key=f"prev_{bilder_liste[0]}", help="Zurück"):
+                idx = (idx - 1) % len(bilder_liste)
+                st.session_state["bild_index"] = idx
+            if st.button("▶", key=f"next_{bilder_liste[0]}", help="Weiter"):
+                idx = (idx + 1) % len(bilder_liste)
+                st.session_state["bild_index"] = idx
 
-reparaturkosten_dict = {}
-for i, (defekt, kosten) in enumerate(config["reparaturkosten"].items()):
-    reparaturkosten_dict[defekt] = st.sidebar.number_input(
-        f"🔧 {defekt.capitalize()} (€)", min_value=0, value=kosten, step=10, key=f"rk_{i}")
+# ---------- Hauptinhalt ----------
+st.title("📱 Kleinanzeigen Scout")
 
-if st.sidebar.button("📂 Konfiguration speichern"):
-    save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict)
-    st.sidebar.success("✅ Konfiguration gespeichert")
+anzeigen_pfad = "daten/anzeigen.json"
+archiv_pfad = "daten/archivierte_anzeigen.json"
+anzeigen = lade_anzeigen(anzeigen_pfad)
+archivierte = lade_anzeigen(archiv_pfad)
 
-# Seitenlogik
-if seite == "🔍 Aktive Anzeigen":
-    st.title("🔍 Aktive Kleinanzeigen")
+tab1, tab2 = st.tabs(["🔍 Aktuelle Anzeigen", "🗃️ Archivierte Anzeigen"])
 
-    with st.form("filters"):
-        col1, col2 = st.columns(2)
-        min_preis = col1.number_input("💶 Mindestpreis", min_value=0, value=0)
-        max_preis = col2.number_input("💶 Maximalpreis", min_value=0, value=1500)
-        nur_versand = st.checkbox("📦 Nur mit Versand")
-        nur_angebote = st.checkbox("📢 Nur Angebote", value=True)
-        submit = st.form_submit_button("🔎 Anzeigen durchsuchen")
-
-    if 'log_buffer' not in st.session_state:
-        st.session_state.log_buffer = StringIO()
-        st.session_state.log_lines = []
-    log_area = st.empty()
-
-    def log(message):
-        print(message, file=sys.stderr)
-        st.session_state.log_buffer.write(message + "\n")
-        st.session_state.log_lines.append(message)
-        log_area.text_area("🛠 Debug-Ausgaben", value="\n".join(st.session_state.log_lines[-50:]), height=300)
-
-    if submit:
-        st.session_state.log_lines.clear()
-        st.session_state.log_buffer.seek(0)
-        st.session_state.log_buffer.truncate(0)
-        with st.spinner("Suche läuft..."):
-            neue_anzeigen = scrape_ads(
-                modell,
-                min_price=min_preis,
-                max_price=max_preis,
-                nur_versand=nur_versand,
-                nur_angebote=nur_angebote,
-                debug=True,
-                config={
-                    "verkaufspreis": verkaufspreis,
-                    "wunsch_marge": wunsch_marge,
-                    "reparaturkosten": reparaturkosten_dict,
-                },
-                log=log
-            )
-        gespeicherte = 0
-        for anzeige in neue_anzeigen:
-            if not is_advert_archived(anzeige["id"]):
-                save_advert(anzeige)
-                gespeicherte += 1
-        if gespeicherte:
-            st.success(f"{gespeicherte} neue Anzeigen gespeichert.")
-        else:
-            st.warning("Keine neuen, relevanten Anzeigen gefunden.")
-
-    alle_anzeigen = [a for a in get_all_adverts_for_model(modell) if not is_advert_archived(a["id"])]
-    if not alle_anzeigen:
-        st.info("ℹ️ Keine gespeicherten Anzeigen verfügbar.")
-
-    for anzeige in alle_anzeigen:
-        man_defekt_keys = []
-        raw_keys = anzeige.get("man_defekt_keys")
-        if raw_keys:
-            try:
-                man_defekt_keys = json.loads(raw_keys) if isinstance(raw_keys, str) else raw_keys
-            except:
-                pass
-
-        reparatur_summe = sum(reparaturkosten_dict.get(key, 0) for key in man_defekt_keys)
-        max_ek = verkaufspreis - wunsch_marge - reparatur_summe
-        pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
-
-        with st.container():
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            col1, col2 = st.columns([1, 4])
-            with col1:
-                st.image(anzeige['image'], width=130)
-                st.markdown(
-                    f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
-                    f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
-                    f"📈 Gewinn: <b>{pot_gewinn:.2f} €</b></p>",
-                    unsafe_allow_html=True
-                )
-
-            with col2:
-                st.markdown(f"### {anzeige['title']}")
-                st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
-                st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
-                st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
-
-                defekte_select = st.multiselect(
-                    "🔧 Defekte wählen:",
-                    options=list(reparaturkosten_dict.keys()),
-                    default=man_defekt_keys,
-                    key=f"man_defekt_select_{anzeige['id']}"
-                )
-
-                cols_btn = st.columns([1, 1])
-                if cols_btn[0].button("📂 Speichern", key=f"save_{anzeige['id']}"):
-                    update_manual_defekt_keys(anzeige["id"], json.dumps(defekte_select))
-                    st.rerun()
-
-                if cols_btn[1].button("💃 Archivieren", key=f"archive_{anzeige['id']}"):
-                    archive_advert(anzeige["id"], True)
-                    st.success("Anzeige archiviert.")
-                    st.rerun()
+with tab1:
+    if not anzeigen:
+        st.info("Keine aktuellen Anzeigen gefunden.")
+    else:
+        for i, eintrag in enumerate(anzeigen):
+            with st.container():
+                st.markdown(f"### {eintrag.get('titel', 'Unbekannter Titel')}")
+                st.markdown(f"**Preis:** {eintrag.get('preis_anzeige', '')}")
+                st.markdown(f"**Bewertung:** {eintrag.get('bewertung', '')}")
+                st.markdown(f"**Link:** [Anzeigenlink]({eintrag.get('url', '')})")
 
                 with st.expander("📄 Beschreibung"):
-                    st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+                    st.markdown(eintrag.get("beschreibung", ""))
 
-elif seite == "📁 Archivierte Anzeigen":
-    st.title("📁 Archivierte Anzeigen")
-    archivierte = get_archived_adverts_for_model(modell)
+                if "bilder_liste" in eintrag and eintrag["bilder_liste"]:
+                    zeige_bilder(eintrag["bilder_liste"])
+
+                st.markdown(f"*Erfasst: {eintrag.get('zeit_erfasst', '')} | Zuletzt geändert: {eintrag.get('zeit_aktualisiert', '')}*")
+
+                col1, col2 = st.columns([1, 5])
+                with col1:
+                    if st.button("Archivieren", key=f"archiv_{i}"):
+                        archivierte.append(eintrag)
+                        del anzeigen[i]
+                        speichere_anzeigen(anzeigen_pfad, anzeigen)
+                        speichere_anzeigen(archiv_pfad, archivierte)
+                        st.success("Anzeige archiviert.")
+                        st.experimental_rerun()
+
+with tab2:
     if not archivierte:
-        st.info("ℹ️ Keine archivierten Anzeigen.")
-    for anzeige in archivierte:
-        man_defekt_keys = []
-        raw_keys = anzeige.get("man_defekt_keys")
-        if raw_keys:
-            try:
-                man_defekt_keys = json.loads(raw_keys) if isinstance(raw_keys, str) else raw_keys
-            except:
-                pass
+        st.info("Keine archivierten Anzeigen.")
+    else:
+        for eintrag in archivierte:
+            with st.container():
+                st.markdown(f"### {eintrag.get('titel', 'Unbekannter Titel')}")
+                st.markdown(f"**Preis:** {eintrag.get('preis_anzeige', '')}")
+                st.markdown(f"**Bewertung:** {eintrag.get('bewertung', '')}")
+                st.markdown(f"**Link:** [Anzeigenlink]({eintrag.get('url', '')})")
 
-        reparatur_summe = sum(reparaturkosten_dict.get(key, 0) for key in man_defekt_keys)
-        max_ek = verkaufspreis - wunsch_marge - reparatur_summe
-        pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
+                with st.expander("📄 Beschreibung"):
+                    st.markdown(eintrag.get("beschreibung", ""))
 
-        with st.container():
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            col1, col2 = st.columns([1, 4])
-            with col1:
-                bilder = anzeige.get("bilder_liste", [])
-                if bilder:
-                    st.image(bilder, width=150, caption="Bilderserie")
-                else:
-                    st.image(anzeige['image'], width=130)
-                st.markdown(
-                    f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
-                    f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
-                    f"📈 Gewinn: <b>{pot_gewinn:.2f} €</b></p>",
-                    unsafe_allow_html=True
-                )
-            with col2:
-                st.markdown(f"### {anzeige['title']}")
-                st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
-                st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
-                st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
+                if "bilder_liste" in eintrag and eintrag["bilder_liste"]:
+                    zeige_bilder(eintrag["bilder_liste"])
 
-                if st.button("↩️ Wiederherstellen", key=f"restore_{anzeige['id']}"):
-                    archive_advert(anzeige["id"], False)
-                    st.success("Anzeige wiederhergestellt.")
-                    st.rerun()
-
-            st.markdown('</div>', unsafe_allow_html=True)
+                st.markdown(f"*Erfasst: {eintrag.get('zeit_erfasst', '')} | Zuletzt geändert: {eintrag.get('zeit_aktualisiert', '')}*")
