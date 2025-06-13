@@ -14,7 +14,40 @@ import sys
 from io import StringIO
 import json
 
-# Initialize
+# Custom CSS für "Modern & Clean" Design
+st.markdown("""
+<style>
+body {
+    background-color: #F4F4F4;
+    color: #2C2C2C;
+}
+h1, h2, h3, h4 {
+    color: #4B6FFF;
+}
+[data-testid="stSidebar"] {
+    background-color: #ffffff;
+}
+.stButton > button {
+    background-color: #4B6FFF;
+    color: white;
+    border-radius: 0.5rem;
+    padding: 0.5rem 1rem;
+    border: none;
+}
+.stButton > button:hover {
+    background-color: #00D1B2;
+}
+.card {
+    background-color: white;
+    border-radius: 1.5rem;
+    padding: 1.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    margin-bottom: 2rem;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Initialisierung
 init_db()
 st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
 
@@ -48,7 +81,8 @@ wunsch_marge = st.sidebar.number_input("🌟 Wunschmarge (€)", min_value=0, va
 reparaturkosten_dict = {}
 for i, (defekt, kosten) in enumerate(config["reparaturkosten"].items()):
     reparaturkosten_dict[defekt] = st.sidebar.number_input(
-        f"🔧 {defekt.capitalize()} (€)", min_value=0, value=kosten, step=10, key=f"rk_{i}")
+        f"🔧 {defekt.capitalize()} (€)", min_value=0, value=kosten, step=10, key=f"rk_{i}"
+    )
 
 if st.sidebar.button("📂 Konfiguration speichern"):
     save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict)
@@ -128,6 +162,7 @@ if seite == "🔍 Aktive Anzeigen":
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
 
         with st.container():
+            st.markdown('<div class="card">', unsafe_allow_html=True)
             col1, col2 = st.columns([1, 4])
             with col1:
                 st.image(anzeige['image'], width=130)
@@ -137,13 +172,11 @@ if seite == "🔍 Aktive Anzeigen":
                     f"📈 Gewinn: <b>{pot_gewinn:.2f} €</b></p>",
                     unsafe_allow_html=True
                 )
-
             with col2:
                 st.markdown(f"**{anzeige['title']}**")
                 st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
                 st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
                 st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
-
                 defekte_select = st.multiselect(
                     "🔧 Defekte wählen:",
                     options=list(reparaturkosten_dict.keys()),
@@ -162,6 +195,7 @@ if seite == "🔍 Aktive Anzeigen":
 
                 with st.expander("📄 Beschreibung"):
                     st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
 elif seite == "📁 Archivierte Anzeigen":
     st.title("📁 Archivierte Anzeigen")
@@ -184,6 +218,7 @@ elif seite == "📁 Archivierte Anzeigen":
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
 
         with st.container():
+            st.markdown('<div class="card">', unsafe_allow_html=True)
             col1, col2 = st.columns([1, 4])
             with col1:
                 bilder = anzeige.get("bilder_liste", [])
@@ -197,17 +232,15 @@ elif seite == "📁 Archivierte Anzeigen":
                     f"📈 Gewinn: <b>{pot_gewinn:.2f} €</b></p>",
                     unsafe_allow_html=True
                 )
-
             with col2:
                 st.markdown(f"**{anzeige['title']}**")
                 st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
                 st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
                 st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
-
                 if st.button("↩️ Wiederherstellen", key=f"restore_{anzeige['id']}"):
                     archive_advert(anzeige["id"], False)
                     st.success("Anzeige wiederhergestellt!")
                     st.rerun()
-
                 with st.expander("📄 Beschreibung"):
                     st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
