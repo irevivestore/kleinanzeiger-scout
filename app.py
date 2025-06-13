@@ -7,9 +7,7 @@ from scraper import scrape_ads
 from db import (
     get_all_active_adverts,
     get_archived_adverts_for_model,
-    save_ads_to_db,
-    update_ad_in_db,
-    archive_ad
+    archive_advert
 )
 from config import (
     IPHONE_MODELLE,
