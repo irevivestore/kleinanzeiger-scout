@@ -14,9 +14,39 @@ import sys
 from io import StringIO
 import json
 
-# Initialize
+# Initialisierung
 init_db()
 st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
+
+# Design Style Injection
+st.markdown("""
+<style>
+    html, body {
+        background-color: #F4F4F4;
+    }
+    .stButton>button {
+        background-color: #4B6FFF;
+        color: white;
+        border-radius: 0.5rem;
+        padding: 0.5rem 1rem;
+        border: none;
+    }
+    .stButton>button:hover {
+        background-color: #3A54D4;
+    }
+    .stMultiSelect div[role="combobox"] {
+        background-color: white;
+        border-radius: 0.5rem;
+    }
+    .card {
+        background-color: white;
+        padding: 1.5rem;
+        border-radius: 1rem;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        margin-bottom: 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Navigation
 seite = st.sidebar.radio("📂 Seiten", ["🔍 Aktive Anzeigen", "📁 Archivierte Anzeigen"])
@@ -30,18 +60,17 @@ IPHONE_MODELLE = [
     "iPhone 14", "iPhone 14 Plus", "iPhone 14 Pro", "iPhone 14 Pro Max",
     "iPhone 15", "iPhone 15 Plus", "iPhone 15 Pro", "iPhone 15 Pro Max"
 ]
-
 if "modell" not in st.session_state:
     st.session_state.modell = "iPhone 14 Pro"
 modell = st.sidebar.selectbox("Modell auswählen", IPHONE_MODELLE, index=IPHONE_MODELLE.index(st.session_state.modell))
 st.session_state.modell = modell
 
+# Konfiguration laden
 config = load_config(modell) or {
     "verkaufspreis": VERKAUFSPREIS_DEFAULT,
     "wunsch_marge": WUNSCH_MARGE_DEFAULT,
     "reparaturkosten": REPARATURKOSTEN_DEFAULT.copy()
 }
-
 verkaufspreis = st.sidebar.number_input("📈 Verkaufspreis (€)", min_value=0, value=config["verkaufspreis"], step=10)
 wunsch_marge = st.sidebar.number_input("🌟 Wunschmarge (€)", min_value=0, value=config["wunsch_marge"], step=10)
 
@@ -69,7 +98,6 @@ if seite == "🔍 Aktive Anzeigen":
     if 'log_buffer' not in st.session_state:
         st.session_state.log_buffer = StringIO()
         st.session_state.log_lines = []
-
     log_area = st.empty()
 
     def log(message):
@@ -82,7 +110,6 @@ if seite == "🔍 Aktive Anzeigen":
         st.session_state.log_lines.clear()
         st.session_state.log_buffer.seek(0)
         st.session_state.log_buffer.truncate(0)
-
         with st.spinner("Suche läuft..."):
             neue_anzeigen = scrape_ads(
                 modell,
@@ -98,13 +125,11 @@ if seite == "🔍 Aktive Anzeigen":
                 },
                 log=log
             )
-
         gespeicherte = 0
         for anzeige in neue_anzeigen:
             if not is_advert_archived(anzeige["id"]):
                 save_advert(anzeige)
                 gespeicherte += 1
-
         if gespeicherte:
             st.success(f"{gespeicherte} neue Anzeigen gespeichert.")
         else:
@@ -128,6 +153,7 @@ if seite == "🔍 Aktive Anzeigen":
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
 
         with st.container():
+            st.markdown('<div class="card">', unsafe_allow_html=True)
             col1, col2 = st.columns([1, 4])
             with col1:
                 st.image(anzeige['image'], width=130)
@@ -139,7 +165,7 @@ if seite == "🔍 Aktive Anzeigen":
                 )
 
             with col2:
-                st.markdown(f"**{anzeige['title']}**")
+                st.markdown(f"### {anzeige['title']}")
                 st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
                 st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
                 st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
@@ -151,25 +177,25 @@ if seite == "🔍 Aktive Anzeigen":
                     key=f"man_defekt_select_{anzeige['id']}"
                 )
 
-                if st.button("📂 Speichern", key=f"save_{anzeige['id']}"):
+                cols_btn = st.columns([1, 1])
+                if cols_btn[0].button("📂 Speichern", key=f"save_{anzeige['id']}"):
                     update_manual_defekt_keys(anzeige["id"], json.dumps(defekte_select))
                     st.rerun()
 
-                if st.button("💃 Archivieren", key=f"archive_{anzeige['id']}"):
+                if cols_btn[1].button("💃 Archivieren", key=f"archive_{anzeige['id']}"):
                     archive_advert(anzeige["id"], True)
                     st.success("Anzeige archiviert.")
                     st.rerun()
 
                 with st.expander("📄 Beschreibung"):
                     st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
 elif seite == "📁 Archivierte Anzeigen":
     st.title("📁 Archivierte Anzeigen")
-
     archivierte = get_archived_adverts_for_model(modell)
     if not archivierte:
         st.info("ℹ️ Keine archivierten Anzeigen.")
-
     for anzeige in archivierte:
         man_defekt_keys = []
         raw_keys = anzeige.get("man_defekt_keys")
@@ -184,6 +210,7 @@ elif seite == "📁 Archivierte Anzeigen":
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
 
         with st.container():
+            st.markdown('<div class="card">', unsafe_allow_html=True)
             col1, col2 = st.columns([1, 4])
             with col1:
                 bilder = anzeige.get("bilder_liste", [])
@@ -197,17 +224,15 @@ elif seite == "📁 Archivierte Anzeigen":
                     f"📈 Gewinn: <b>{pot_gewinn:.2f} €</b></p>",
                     unsafe_allow_html=True
                 )
-
             with col2:
-                st.markdown(f"**{anzeige['title']}**")
+                st.markdown(f"### {anzeige['title']}")
                 st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
                 st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
                 st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
 
                 if st.button("↩️ Wiederherstellen", key=f"restore_{anzeige['id']}"):
                     archive_advert(anzeige["id"], False)
-                    st.success("Anzeige wiederhergestellt!")
+                    st.success("Anzeige wiederhergestellt.")
                     st.rerun()
 
-                with st.expander("📄 Beschreibung"):
-                    st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
