@@ -5,7 +5,6 @@ import uuid
 from datetime import datetime
 from urllib.parse import quote, urljoin
 from playwright.sync_api import sync_playwright
-import db  # Dein Datenbankmodul
 
 
 def scrape_ads(
@@ -18,6 +17,8 @@ def scrape_ads(
     config=None,
     log=None
 ):
+    import db  # Lokaler Import zur Vermeidung von Zirkularität
+
     if config is None:
         config = {
             "verkaufspreis": 600,
