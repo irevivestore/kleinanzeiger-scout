@@ -26,8 +26,7 @@ def init_db():
         "beschreibung": "TEXT",
         "man_defekt_keys": "TEXT",
         "created_at": "TEXT",
-        "updated_at": "TEXT",
-        "archived": "INTEGER DEFAULT 0"  # Neu: Archiv-Status (0 = aktiv, 1 = archiviert)
+        "updated_at": "TEXT"
     }
 
     c.execute("PRAGMA table_info(anzeigen)")
@@ -56,6 +55,77 @@ def save_advert(ad):
 
     now = datetime.datetime.now().isoformat()
 
-    # Prüfen, ob Anzeige bereits vorhanden (egal ob archiviert oder nicht)
+    # Prüfen, ob Anzeige bereits vorhanden
     c.execute("SELECT man_defekt_keys FROM anzeigen WHERE id = ?", (ad["id"],))
-    result = c.fetch
+    result = c.fetchone()
+
+    if result:
+        # Erhalte bestehenden man_defekt_keys Wert
+        existing_man_defekt_keys = result[0]
+        # Aktualisieren (ohne man_defekt_keys zu überschreiben)
+        c.execute('''
+            UPDATE anzeigen
+            SET price = ?, title = ?, link = ?, image = ?, versand = ?, beschreibung = ?, updated_at = ?
+            WHERE id = ?
+        ''', (
+            ad["price"],
+            ad["title"],
+            ad["link"],
+            ad["image"],
+            int(ad["versand"]),
+            ad["beschreibung"],
+            now,
+            ad["id"]
+        ))
+    else:
+        # Neu einfügen
+        c.execute('''
+            INSERT INTO anzeigen (
+                id, modell, title, price, link, image, versand, beschreibung, man_defekt_keys, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            ad["id"],
+            ad["modell"],
+            ad["title"],
+            ad["price"],
+            ad["link"],
+            ad["image"],
+            int(ad["versand"]),
+            ad["beschreibung"],
+            json.dumps([]),  # leerer Array-String als Standard
+            now,
+            now
+        ))
+
+    conn.commit()
+    conn.close()
+
+def get_all_adverts_for_model(modell):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM anzeigen WHERE modell = ?", (modell,))
+    rows = cursor.fetchall()
+    print(f"[DEBUG] Lade {len(rows)} Anzeigen aus DB für Modell {modell}")
+    conn.close()
+    return [dict(row) for row in rows]
+
+def save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    # Dictionary als String speichern
+    rep_string = repr(reparaturkosten_dict)
+
+    c.execute('''
+        INSERT OR REPLACE INTO konfigurationen (modell, verkaufspreis, wunsch_marge, reparaturkosten)
+        VALUES (?, ?, ?, ?)
+    ''', (modell, verkaufspreis, wunsch_marge, rep_string))
+
+    conn.commit()
+    conn.close()
+
+def load_config(modell):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT verkaufspreis, wunsch_marge, reparaturkosten FROM konfigurationen WHERE modell = ?", (modell,))
