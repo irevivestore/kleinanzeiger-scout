@@ -1,4 +1,3 @@
-
 import sqlite3
 import datetime
 import json
@@ -28,7 +27,7 @@ def init_db():
         "man_defekt_keys": "TEXT",
         "created_at": "TEXT",
         "updated_at": "TEXT",
-        "archived": "INTEGER DEFAULT 0"  # Neu: Archiv-Status (0 = aktiv, 1 = archiviert)
+        "archived": "INTEGER DEFAULT 0"
     }
 
     c.execute("PRAGMA table_info(anzeigen)")
@@ -57,12 +56,10 @@ def save_advert(ad):
 
     now = datetime.datetime.now().isoformat()
 
-    # Prüfen, ob Anzeige bereits vorhanden (egal ob archiviert oder nicht)
     c.execute("SELECT man_defekt_keys FROM anzeigen WHERE id = ?", (ad["id"],))
     result = c.fetchone()
 
     if result:
-        # Update bestehende Anzeige, Archivstatus bleibt erhalten
         c.execute('''
             UPDATE anzeigen
             SET price = ?, title = ?, link = ?, image = ?, versand = ?, beschreibung = ?, updated_at = ?
@@ -78,7 +75,6 @@ def save_advert(ad):
             ad["id"]
         ))
     else:
-        # Neue Anzeige einfügen, archiviert standardmäßig 0
         c.execute('''
             INSERT INTO anzeigen (
                 id, modell, title, price, link, image, versand, beschreibung, man_defekt_keys, created_at, updated_at, archived
@@ -114,8 +110,19 @@ def get_all_adverts_for_model(modell, include_archived=False):
     conn.close()
     return [dict(row) for row in rows]
 
+def get_all_ad_ids_for_model(modell, include_archived=False):
+    """Gibt eine Liste aller Anzeigen-IDs für ein Modell zurück, optional auch archivierte."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    if include_archived:
+        cursor.execute("SELECT id FROM anzeigen WHERE modell = ?", (modell,))
+    else:
+        cursor.execute("SELECT id FROM anzeigen WHERE modell = ? AND archived = 0", (modell,))
+    ids = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return ids
+
 def get_archived_adverts_for_model(modell):
-    """Liefert alle archivierten Anzeigen zu einem Modell."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -125,7 +132,6 @@ def get_archived_adverts_for_model(modell):
     return [dict(row) for row in rows]
 
 def get_all_active_adverts():
-    """Gibt alle aktiven (nicht archivierten) Anzeigen zurück, unabhängig vom Modell."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -170,7 +176,6 @@ def load_config(modell):
         return None
 
 def update_manual_defekt_keys(ad_id, json_str):
-    """Speichert eine JSON-kodierte Liste der ausgewählten Defektarten in der DB für die Anzeige."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE anzeigen SET man_defekt_keys = ? WHERE id = ?", (json_str, ad_id))
@@ -178,16 +183,14 @@ def update_manual_defekt_keys(ad_id, json_str):
     conn.close()
 
 def archive_advert(ad_id, archived: bool):
-    """Setzt den Archivierungsstatus für eine Anzeige (archived=True archiviert)."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE anzeigen SET archived = ? WHERE id = ?", (1 if archived else 0, ad_id))
-    print(f"[DB] Anzeige {ad_id} archiviert: {archived}")  # Debug-Log
+    print(f"[DB] Anzeige {ad_id} archiviert: {archived}")
     conn.commit()
     conn.close()
 
 def is_advert_archived(ad_id):
-    """Gibt zurück, ob eine Anzeige archiviert ist."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT archived FROM anzeigen WHERE id = ?", (ad_id,))
@@ -195,4 +198,4 @@ def is_advert_archived(ad_id):
     conn.close()
     if row:
         return row[0] == 1
-    return False  # Falls Anzeige nicht existiert
+    return False
