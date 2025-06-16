@@ -13,6 +13,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV NODE_OPTIONS=--openssl-legacy-provider
 
+
 # Arbeitsverzeichnis setzen
 WORKDIR /app
 
