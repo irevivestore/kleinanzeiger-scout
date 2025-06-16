@@ -1,4 +1,3 @@
-
 # scraper.py
 import re
 import time
@@ -99,16 +98,35 @@ def scrape_ads(
 
                 full_link = urljoin(base_url, custom_href)
 
+                # Titel korrekt aus h2 a ziehen
                 title_el = entry.locator("h2 a")
-                title = title_el.inner_text().strip() if title_el else "Unbekannter Titel"
+                if title_el.count() > 0:
+                    title = title_el.first.inner_text().strip()
+                    if not title:
+                        title = "Unbekannter Titel"
+                else:
+                    title = "Unbekannter Titel"
 
+                # Preistext auslesen, Mehrfachpreise behandeln
                 preis_el = entry.locator(".aditem-main--middle--price-shipping--price")
                 preis_text = preis_el.inner_text().strip() if preis_el else ""
                 preis_text = preis_text.replace("€", "").replace(".", "").replace(",", "").strip()
-                try:
-                    price = int(re.findall(r"\d+", preis_text)[0])
-                except (IndexError, ValueError):
-                    price = 0
+
+                # Preis mit Strikethrough-Formatierung aufteilen, falls zusammenhängende Zahlen
+                # z.B. "450499" => 450 (alt 499)
+                price = 0
+                price_display = ""
+                numbers = re.findall(r"\d+", preis_text)
+                if len(numbers) == 1:
+                    price = int(numbers[0])
+                    price_display = f"{price} €"
+                elif len(numbers) >= 2:
+                    first = int(numbers[0])
+                    second = int(numbers[1])
+                    price = first
+                    price_display = f"{first} € (~~{second} €~~)"
+                else:
+                    price_display = preis_text or "0 €"
 
                 detail_page = context.new_page()
                 detail_page.goto(full_link, timeout=60000)
@@ -161,11 +179,14 @@ def scrape_ads(
                 else:
                     bewertung = "rot"
 
+                jetzt = datetime.now().strftime("%d.%m.%Y %H:%M")
+
                 ad_data = {
                     "id": ad_id,
                     "modell": modell,
                     "title": title,
                     "price": price,
+                    "price_display": price_display,
                     "link": full_link,
                     "image": images[0] if images else "",
                     "bilder_liste": images,
@@ -173,8 +194,8 @@ def scrape_ads(
                     "beschreibung": beschreibung,
                     "reparaturkosten": rep_summe,
                     "bewertung": bewertung,
-                    "created_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
-                    "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
+                    "created_at": jetzt,
+                    "updated_at": jetzt
                 }
 
                 db.save_advert(ad_data)
