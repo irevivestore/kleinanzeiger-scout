@@ -1,4 +1,3 @@
-
 import streamlit as st
 from scraper import scrape_ads
 from db import (
@@ -55,6 +54,19 @@ if st.sidebar.button("📂 Konfiguration speichern"):
     save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict)
     st.sidebar.success("✅ Konfiguration gespeichert")
 
+# Hilfsfunktion zum Debug-Log
+if 'log_buffer' not in st.session_state:
+    st.session_state.log_buffer = StringIO()
+    st.session_state.log_lines = []
+
+log_area = st.empty()
+
+def log(message):
+    print(message, file=sys.stderr)
+    st.session_state.log_buffer.write(message + "\n")
+    st.session_state.log_lines.append(message)
+    log_area.text_area("🛠 Debug-Ausgaben", value="\n".join(st.session_state.log_lines[-50:]), height=300)
+
 # Seitenlogik
 if seite == "🔍 Aktive Anzeigen":
     st.title("🔍 Aktive Kleinanzeigen")
@@ -66,18 +78,6 @@ if seite == "🔍 Aktive Anzeigen":
         nur_versand = st.checkbox("📦 Nur mit Versand")
         nur_angebote = st.checkbox("📢 Nur Angebote", value=True)
         submit = st.form_submit_button("🔎 Anzeigen durchsuchen")
-
-    if 'log_buffer' not in st.session_state:
-        st.session_state.log_buffer = StringIO()
-        st.session_state.log_lines = []
-
-    log_area = st.empty()
-
-    def log(message):
-        print(message, file=sys.stderr)
-        st.session_state.log_buffer.write(message + "\n")
-        st.session_state.log_lines.append(message)
-        log_area.text_area("🛠 Debug-Ausgaben", value="\n".join(st.session_state.log_lines[-50:]), height=300)
 
     if submit:
         st.session_state.log_lines.clear()
@@ -154,12 +154,12 @@ if seite == "🔍 Aktive Anzeigen":
 
                 if st.button("📂 Speichern", key=f"save_{anzeige['id']}"):
                     update_manual_defekt_keys(anzeige["id"], json.dumps(defekte_select))
-                    st.rerun()
+                    st.experimental_rerun()
 
                 if st.button("💃 Archivieren", key=f"archive_{anzeige['id']}"):
                     archive_advert(anzeige["id"], True)
                     st.success("Anzeige archiviert.")
-                    st.rerun()
+                    st.experimental_rerun()
 
                 with st.expander("📄 Beschreibung"):
                     st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
@@ -189,7 +189,7 @@ elif seite == "📁 Archivierte Anzeigen":
             with col1:
                 bilder = anzeige.get("bilder_liste", [])
                 if bilder:
-                    st.image(bilder, width=150, caption="Bilderserie")
+                    st.image(bilder, width=150, caption=[f"Bild {i+1}" for i in range(len(bilder))])
                 else:
                     st.image(anzeige['image'], width=130)
                 st.markdown(
@@ -208,7 +208,7 @@ elif seite == "📁 Archivierte Anzeigen":
                 if st.button("↩️ Wiederherstellen", key=f"restore_{anzeige['id']}"):
                     archive_advert(anzeige["id"], False)
                     st.success("Anzeige wiederhergestellt!")
-                    st.rerun()
+                    st.experimental_rerun()
 
                 with st.expander("📄 Beschreibung"):
                     st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
