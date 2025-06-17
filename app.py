@@ -31,7 +31,7 @@ if seite == "Suche starten":
 
     if st.button("Jetzt suchen"):
         with st.spinner("Suche läuft..."):
-            resultate = scraper.scrape_ads(
+            resultate = scraper.scrapeAds(
                 modell=modell,
                 min_price=min_price,
                 max_price=max_price,
@@ -45,49 +45,49 @@ if seite == "Suche starten":
 # Aktive Anzeigen
 if seite == "Aktive Anzeigen":
     st.header("Aktive Anzeigen")
-    daten = db.load_adverts(only_active=True)
+    daten = db.getAllActiveAdverts()
 
     if not daten:
         st.info("Keine aktiven Anzeigen gefunden.")
     else:
         for eintrag in daten:
-            with st.expander(f"{eintrag['title']} ({eintrag['priceDisplay']})", expanded=False):
+            with st.expander(f"{eintrag['title']} ({eintrag.get('priceDisplay', eintrag['price'])} €)", expanded=False):
                 col1, col2 = st.columns([1, 3])
 
                 with col1:
                     if eintrag["image"]:
                         st.image(eintrag["image"], width=150)
-                    st.write(f"**Preis:** {eintrag['priceDisplay']}")
-                    st.write(f"**Bewertung:** :{eintrag['bewertung']}:")
-                    st.write(f"**Reparaturkosten:** {eintrag['reparaturkosten']} €")
+                    st.write(f"**Preis:** {eintrag.get('priceDisplay', eintrag['price'])} €")
+                    st.write(f"**Bewertung:** :{eintrag.get('bewertung', 'neutral')}:")
+                    st.write(f"**Reparaturkosten:** {eintrag.get('reparaturkosten', 0)} €")
                     st.write(f"[Zur Anzeige]({eintrag['link']})", unsafe_allow_html=True)
 
                     if st.button("Archivieren", key=f"archiv_{eintrag['id']}"):
-                        db.archive_advert(eintrag["id"])
+                        db.archiveAdvert(eintrag["id"], archived=True)
                         st.experimental_rerun()
 
                 with col2:
-                    st.write(eintrag["beschreibung"])
+                    st.write(eintrag.get("beschreibung", "Keine Beschreibung vorhanden."))
 
 # Archivierte Anzeigen
 if seite == "Archivierte Anzeigen":
     st.header("Archivierte Anzeigen")
-    daten = db.load_adverts(only_active=False)
+    daten = db.getArchivedAdvertsForModel(modell="iPhone 14 Pro")  # Du kannst das Modell hier dynamisch setzen
 
     if not daten:
         st.info("Keine archivierten Anzeigen vorhanden.")
     else:
         for eintrag in daten:
-            with st.expander(f"{eintrag['title']} ({eintrag['priceDisplay']})", expanded=False):
+            with st.expander(f"{eintrag['title']} ({eintrag.get('priceDisplay', eintrag['price'])} €)", expanded=False):
                 col1, col2 = st.columns([1, 3])
 
                 with col1:
                     if eintrag["image"]:
                         st.image(eintrag["image"], width=150)
-                    st.write(f"**Preis:** {eintrag['priceDisplay']}")
-                    st.write(f"**Bewertung:** :{eintrag['bewertung']}:")
-                    st.write(f"**Reparaturkosten:** {eintrag['reparaturkosten']} €")
+                    st.write(f"**Preis:** {eintrag.get('priceDisplay', eintrag['price'])} €")
+                    st.write(f"**Bewertung:** :{eintrag.get('bewertung', 'neutral')}:")
+                    st.write(f"**Reparaturkosten:** {eintrag.get('reparaturkosten', 0)} €")
                     st.write(f"[Zur Anzeige]({eintrag['link']})", unsafe_allow_html=True)
 
                 with col2:
-                    st.write(eintrag["beschreibung"])
+                    st.write(eintrag.get("beschreibung", "Keine Beschreibung vorhanden."))
