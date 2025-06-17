@@ -27,7 +27,7 @@ RUN playwright install --with-deps chromium
 # Projektdateien kopieren
 COPY . .
 
-# Wichtige Änderung: Config direkt ins richtige Verzeichnis kopieren
+# Wichtige Änderung: Config direkt ins Verzeichnis /app/.streamlit kopieren
 RUN mkdir -p /app/.streamlit
 COPY .streamlit/config.toml /app/.streamlit/config.toml
 
