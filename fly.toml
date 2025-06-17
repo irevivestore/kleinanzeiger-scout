@@ -7,6 +7,9 @@ app = 'kleinanzeiger-scout'
 primary_region = 'fra'
 
 [build]
+  dockerfile = "Dockerfile"
+
+
 
 [http_service]
   internal_port = 8080
