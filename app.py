@@ -24,21 +24,16 @@ def zeige_bilder_slider(bilder_liste, id_prefix):
     if key_index not in st.session_state:
         st.session_state[key_index] = 0
 
-    col1, col2, col3 = st.columns([1, 6, 1])
+    st.session_state[key_index] = st.slider(
+        "Bild auswählen",
+        min_value=0,
+        max_value=len(bilder_liste) - 1,
+        value=st.session_state[key_index],
+        key=f"slider_{id_prefix}"
+    )
 
-    with col1:
-        if st.button("⬅️", key=f"prev_{id_prefix}"):
-            if st.session_state[key_index] > 0:
-                st.session_state[key_index] -= 1
-
-    with col3:
-        if st.button("➡️", key=f"next_{id_prefix}"):
-            if st.session_state[key_index] < len(bilder_liste) - 1:
-                st.session_state[key_index] += 1
-
-    with col2:
-        st.image(bilder_liste[st.session_state[key_index]], use_container_width=True)
-        st.caption(f"Bild {st.session_state[key_index] + 1} von {len(bilder_liste)}")
+    st.image(bilder_liste[st.session_state[key_index]], use_container_width=True)
+    st.caption(f"Bild {st.session_state[key_index] + 1} von {len(bilder_liste)}")
 
 # Initialize
 init_db()
