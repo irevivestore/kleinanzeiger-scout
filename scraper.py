@@ -1,4 +1,3 @@
-# scraper.py
 import re
 import time
 import uuid
@@ -6,7 +5,6 @@ from datetime import datetime
 from urllib.parse import quote, urljoin
 from playwright.sync_api import sync_playwright
 import db  # Dein Datenbankmodul
-
 
 def scrape_ads(
     modell,
@@ -98,7 +96,6 @@ def scrape_ads(
 
                 full_link = urljoin(base_url, custom_href)
 
-                # Titel korrekt aus h2 a ziehen
                 title_el = entry.locator("h2 a")
                 if title_el.count() > 0:
                     title = title_el.first.inner_text().strip()
@@ -107,7 +104,6 @@ def scrape_ads(
                 else:
                     title = "Unbekannter Titel"
 
-                # Preistext auslesen, Mehrfachpreise behandeln
                 preis_el = entry.locator(".aditem-main--middle--price-shipping--price")
                 preis_text = preis_el.inner_text().strip() if preis_el else ""
                 preis_text = preis_text.replace("€", "").replace(".", "").replace(",", "").strip()
@@ -130,7 +126,6 @@ def scrape_ads(
                 detail_page.goto(full_link, timeout=60000)
                 detail_page.wait_for_timeout(3000)
 
-                # Alle Bilder sammeln und echte Produktbilder filtern
                 images = []
                 try:
                     detail_page.wait_for_selector("img", timeout=3000)
@@ -144,7 +139,6 @@ def scrape_ads(
                 except:
                     pass
 
-                # Beschreibung sammeln
                 beschreibung = ""
                 selectors = [
                     "div[data-testid='ad-detail-description']",
@@ -186,16 +180,16 @@ def scrape_ads(
                     "modell": modell,
                     "title": title,
                     "price": price,
-                    "price_display": price_display,
+                    "priceDisplay": price_display,
                     "link": full_link,
                     "image": images[0] if images else "",
-                    "bilder_liste": images,
+                    "bilderListe": images,
                     "versand": nur_versand,
                     "beschreibung": beschreibung,
                     "reparaturkosten": rep_summe,
                     "bewertung": bewertung,
-                    "created_at": jetzt,
-                    "updated_at": jetzt
+                    "createdAt": jetzt,
+                    "updatedAt": jetzt
                 }
 
                 db.save_advert(ad_data)
