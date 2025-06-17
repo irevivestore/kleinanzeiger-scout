@@ -37,7 +37,7 @@ def zeige_bilder_slider(bilder_liste, id_prefix):
                 st.session_state[key_index] += 1
 
     with col2:
-        st.image(bilder_liste[st.session_state[key_index]], use_column_width=True)
+        st.image(bilder_liste[st.session_state[key_index]], use_container_width=True)
         st.caption(f"Bild {st.session_state[key_index] + 1} von {len(bilder_liste)}")
 
 # Initialize
