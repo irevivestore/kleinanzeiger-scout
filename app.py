@@ -18,6 +18,11 @@ import json
 init_db()
 st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
 
+# 👉 Debug-Info: Zeigt das aktuell geladene Theme laut Streamlit an
+with st.sidebar.expander("🎨 Theme-Debug", expanded=False):
+    st.write("Aktuelles Theme laut Streamlit:")
+    st.json(st.get_option("theme"))
+
 # Navigation
 seite = st.sidebar.radio("📂 Seiten", ["🔍 Aktive Anzeigen", "📁 Archivierte Anzeigen"])
 
@@ -203,12 +208,4 @@ elif seite == "📁 Archivierte Anzeigen":
                 st.markdown(f"**{anzeige['title']}**")
                 st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
                 st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
-                st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
-
-                if st.button("↩️ Wiederherstellen", key=f"restore_{anzeige['id']}"):
-                    archive_advert(anzeige["id"], False)
-                    st.success("Anzeige wiederhergestellt!")
-                    st.experimental_rerun()
-
-                with st.expander("📄 Beschreibung"):
-                    st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
+                st.m
