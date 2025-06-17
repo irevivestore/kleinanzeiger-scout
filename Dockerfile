@@ -27,8 +27,9 @@ RUN playwright install --with-deps chromium
 # Projektdateien kopieren
 COPY . .
 
-# Hier kommt die wichtige neue Zeile:
-RUN mkdir -p /root/.streamlit && cp .streamlit/config.toml /root/.streamlit/config.toml
+# Wichtige Änderung: Config direkt ins richtige Verzeichnis kopieren
+RUN mkdir -p /app/.streamlit
+COPY .streamlit/config.toml /app/.streamlit/config.toml
 
 # Startbefehl für Streamlit
 CMD ["streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0"]
