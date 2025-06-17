@@ -8,7 +8,6 @@ from urllib.parse import quote, urljoin
 from playwright.sync_api import sync_playwright
 import db  # Dein Datenbankmodul
 
-
 def scrape_ads(
     modell,
     min_price=0,
@@ -112,25 +111,22 @@ def scrape_ads(
 
                 detail_page = context.new_page()
                 detail_page.goto(full_link, timeout=60000)
-                detail_page.wait_for_timeout(3000)
+                detail_page.wait_for_timeout(2000)  # Warten auf Bild-Ladezeit
 
-                # Bilder über galleryimage-element mit JSON-LD auslesen
+                # Bilder via img.src auslesen
                 images = []
                 try:
-                    detail_page.wait_for_selector("div.galleryimage-element", timeout=5000)
-                    gallery_divs = detail_page.locator("div.galleryimage-element")
-                    count_images = gallery_divs.count()
+                    detail_page.wait_for_selector("div.galleryimage-element img", timeout=5000)
+                    img_elements = detail_page.locator("div.galleryimage-element img")
+                    count_images = img_elements.count()
 
                     for j in range(count_images):
-                        div = gallery_divs.nth(j)
-                        script_text = div.locator("script[type='application/ld+json']").inner_text()
-                        if script_text:
-                            data = json.loads(script_text)
-                            content_url = data.get("contentUrl")
-                            if content_url and content_url not in images:
-                                images.append(content_url)
+                        img_src = img_elements.nth(j).get_attribute("src")
+                        if img_src and img_src not in images:
+                            images.append(img_src)
+                    log(f"[🖼️] {len(images)} Bilder erfolgreich geladen.")
                 except Exception as e:
-                    log(f"[⚠️] Fehler beim Sammeln der Bilder via JSON LD: {e}")
+                    log(f"[⚠️] Fehler beim Sammeln der Bilder: {e}")
 
                 # Beschreibung sammeln
                 beschreibung = ""
