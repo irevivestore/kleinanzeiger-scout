@@ -112,8 +112,6 @@ def scrape_ads(
                 preis_text = preis_el.inner_text().strip() if preis_el else ""
                 preis_text = preis_text.replace("€", "").replace(".", "").replace(",", "").strip()
 
-                # Preis mit Strikethrough-Formatierung aufteilen, falls zusammenhängende Zahlen
-                # z.B. "450499" => 450 (alt 499)
                 price = 0
                 price_display = ""
                 numbers = re.findall(r"\d+", preis_text)
@@ -132,15 +130,17 @@ def scrape_ads(
                 detail_page.goto(full_link, timeout=60000)
                 detail_page.wait_for_timeout(3000)
 
-                # Alle Bilder sammeln
+                # Alle Bilder sammeln und echte Produktbilder filtern
                 images = []
                 try:
                     detail_page.wait_for_selector("img", timeout=3000)
                     img_elements = detail_page.locator("img")
                     for j in range(img_elements.count()):
                         img_url = img_elements.nth(j).get_attribute("src")
-                        if img_url and "https://" in img_url and img_url not in images:
-                            images.append(img_url)
+                        if img_url and "https://" in img_url:
+                            if any(substring in img_url for substring in ["/big/", "/image/", "/api/v1/"]):
+                                if img_url not in images:
+                                    images.append(img_url)
                 except:
                     pass
 
