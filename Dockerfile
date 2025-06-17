@@ -13,7 +13,6 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV NODE_OPTIONS=--openssl-legacy-provider
 
-
 # Arbeitsverzeichnis setzen
 WORKDIR /app
 
@@ -28,5 +27,8 @@ RUN playwright install --with-deps chromium
 # Projektdateien kopieren
 COPY . .
 
-# Startbefehl für Streamlit (nicht nur "python app.py")
+# Hier kommt die wichtige neue Zeile:
+RUN mkdir -p /root/.streamlit && cp .streamlit/config.toml /root/.streamlit/config.toml
+
+# Startbefehl für Streamlit
 CMD ["streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0"]
