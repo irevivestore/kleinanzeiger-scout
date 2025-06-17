@@ -18,11 +18,6 @@ import json
 init_db()
 st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
 
-# 👉 Debug-Info: Zeigt das aktuell geladene Theme laut Streamlit an
-with st.sidebar.expander("🎨 Theme-Debug", expanded=False):
-    st.write("Aktuelles Theme laut Streamlit:")
-    st.json(st.get_option("theme"))
-
 # Navigation
 seite = st.sidebar.radio("📂 Seiten", ["🔍 Aktive Anzeigen", "📁 Archivierte Anzeigen"])
 
