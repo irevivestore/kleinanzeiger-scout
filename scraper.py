@@ -1,3 +1,5 @@
+
+# scraper.py
 import re
 import time
 import uuid
@@ -5,6 +7,7 @@ from datetime import datetime
 from urllib.parse import quote, urljoin
 from playwright.sync_api import sync_playwright
 import db  # Dein Datenbankmodul
+
 
 def scrape_ads(
     modell,
@@ -96,6 +99,7 @@ def scrape_ads(
 
                 full_link = urljoin(base_url, custom_href)
 
+                # Titel korrekt aus h2 a ziehen
                 title_el = entry.locator("h2 a")
                 if title_el.count() > 0:
                     title = title_el.first.inner_text().strip()
@@ -104,10 +108,13 @@ def scrape_ads(
                 else:
                     title = "Unbekannter Titel"
 
+                # Preistext auslesen, Mehrfachpreise behandeln
                 preis_el = entry.locator(".aditem-main--middle--price-shipping--price")
                 preis_text = preis_el.inner_text().strip() if preis_el else ""
                 preis_text = preis_text.replace("€", "").replace(".", "").replace(",", "").strip()
 
+                # Preis mit Strikethrough-Formatierung aufteilen, falls zusammenhängende Zahlen
+                # z.B. "450499" => 450 (alt 499)
                 price = 0
                 price_display = ""
                 numbers = re.findall(r"\d+", preis_text)
@@ -126,19 +133,19 @@ def scrape_ads(
                 detail_page.goto(full_link, timeout=60000)
                 detail_page.wait_for_timeout(3000)
 
+                # Alle Bilder sammeln
                 images = []
                 try:
                     detail_page.wait_for_selector("img", timeout=3000)
                     img_elements = detail_page.locator("img")
                     for j in range(img_elements.count()):
                         img_url = img_elements.nth(j).get_attribute("src")
-                        if img_url and "https://" in img_url:
-                            if any(substring in img_url for substring in ["/big/", "/image/", "/api/v1/"]):
-                                if img_url not in images:
-                                    images.append(img_url)
+                        if img_url and "https://" in img_url and img_url not in images:
+                            images.append(img_url)
                 except:
                     pass
 
+                # Beschreibung sammeln
                 beschreibung = ""
                 selectors = [
                     "div[data-testid='ad-detail-description']",
@@ -180,16 +187,16 @@ def scrape_ads(
                     "modell": modell,
                     "title": title,
                     "price": price,
-                    "priceDisplay": price_display,
+                    "price_display": price_display,
                     "link": full_link,
                     "image": images[0] if images else "",
-                    "bilderListe": images,
+                    "bilder_liste": images,
                     "versand": nur_versand,
                     "beschreibung": beschreibung,
                     "reparaturkosten": rep_summe,
                     "bewertung": bewertung,
-                    "createdAt": jetzt,
-                    "updatedAt": jetzt
+                    "created_at": jetzt,
+                    "updated_at": jetzt
                 }
 
                 db.save_advert(ad_data)
