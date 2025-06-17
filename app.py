@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_image_carousel import image_carousel
 from scraper import scrape_ads
 from db import (
     init_db, save_advert, get_all_adverts_for_model,
@@ -129,22 +130,23 @@ if seite == "🔍 Aktive Anzeigen":
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
 
         with st.container():
-            col1, col2 = st.columns([1, 4])
+            col1, col2, col3 = st.columns([1, 3, 2])
             with col1:
-                st.image(anzeige['image'], width=130)
-                st.markdown(
-                    f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
-                    f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
-                    f"📈 Gewinn: <b>{pot_gewinn:.2f} €</b></p>",
-                    unsafe_allow_html=True
-                )
-
+                bilder = anzeige.get("bilder_liste", [])
+                if bilder:
+                    image_carousel(bilder, height=200, width=250)
+                else:
+                    st.image(anzeige['image'], width=250)
             with col2:
                 st.markdown(f"**{anzeige['title']}**")
                 st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
+                st.markdown(f"💰 Preis: **{anzeige['price']} €**")
                 st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
                 st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
+                st.markdown(f"📉 Max. EK: **{max_ek:.2f} €**")
+                st.markdown(f"📈 Gewinn: **{pot_gewinn:.2f} €**")
 
+            with col3:
                 defekte_select = st.multiselect(
                     "🔧 Defekte wählen:",
                     options=list(reparaturkosten_dict.keys()),
@@ -161,8 +163,8 @@ if seite == "🔍 Aktive Anzeigen":
                     st.success("Anzeige archiviert.")
                     st.experimental_rerun()
 
-                with st.expander("📄 Beschreibung"):
-                    st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
+            with st.expander("📄 Beschreibung"):
+                st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
 
 elif seite == "📁 Archivierte Anzeigen":
     st.title("📁 Archivierte Anzeigen")
@@ -185,22 +187,18 @@ elif seite == "📁 Archivierte Anzeigen":
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
 
         with st.container():
-            col1, col2 = st.columns([1, 4])
-            with col1:
-                bilder = anzeige.get("bilder_liste", [])
-                if bilder:
-                    st.image(bilder, width=150, caption=[f"Bild {i+1}" for i in range(len(bilder))])
-                else:
-                    st.image(anzeige['image'], width=130)
-                st.markdown(
-                    f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
-                    f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
-                    f"📈 Gewinn: <b>{pot_gewinn:.2f} €</b></p>",
-                    unsafe_allow_html=True
-                )
+            st.subheader(anzeige['title'])
+            bilder = anzeige.get("bilder_liste", [])
+            if bilder:
+                image_carousel(bilder, height=300, width=400)
+            else:
+                st.image(anzeige['image'], width=300)
 
-            with col2:
-                st.markdown(f"**{anzeige['title']}**")
-                st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
-                st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
-                st.m
+            st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
+            st.markdown(f"💰 Preis: **{anzeige['price']} €**")
+            st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
+            st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
+            st.markdown(f"📉 Max. EK: **{max_ek:.2f} €**")
+            st.markdown(f"📈 Gewinn: **{pot_gewinn:.2f} €**")
+            with st.expander("📄 Beschreibung"):
+                st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
