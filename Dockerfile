@@ -38,7 +38,7 @@ RUN mkdir -p /app/.streamlit
 COPY .streamlit/config.toml /app/.streamlit/config.toml
 
 CMD ["streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0"]
-zen
+
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV NODE_OPTIONS=--openssl-legacy-provider
