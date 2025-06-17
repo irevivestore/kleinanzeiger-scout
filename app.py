@@ -1,5 +1,5 @@
 import streamlit as st
-from streamlit_image_carousel import image_carousel
+#from streamlit_image_carousel import image_carousel  # Entfernt
 from scraper import scrape_ads
 from db import (
     init_db, save_advert, get_all_adverts_for_model,
@@ -134,7 +134,9 @@ if seite == "🔍 Aktive Anzeigen":
             with col1:
                 bilder = anzeige.get("bilder_liste", [])
                 if bilder:
-                    image_carousel(bilder, height=200, width=250)
+                    # Bild-Slider anstelle von image_carousel
+                    bild_index = st.slider("Bild auswählen", 0, len(bilder) - 1, key=f"slider_{anzeige['id']}")
+                    st.image(bilder[bild_index], width=250)
                 else:
                     st.image(anzeige['image'], width=250)
             with col2:
@@ -190,7 +192,8 @@ elif seite == "📁 Archivierte Anzeigen":
             st.subheader(anzeige['title'])
             bilder = anzeige.get("bilder_liste", [])
             if bilder:
-                image_carousel(bilder, height=300, width=400)
+                bild_index = st.slider("Bild auswählen", 0, len(bilder) - 1, key=f"slider_arch_{anzeige['id']}")
+                st.image(bilder[bild_index], width=300)
             else:
                 st.image(anzeige['image'], width=300)
 
