@@ -1,8 +1,8 @@
-
 # scraper.py
 import re
 import time
 import uuid
+import json
 from datetime import datetime
 from urllib.parse import quote, urljoin
 from playwright.sync_api import sync_playwright
@@ -99,51 +99,38 @@ def scrape_ads(
 
                 full_link = urljoin(base_url, custom_href)
 
-                # Titel korrekt aus h2 a ziehen
                 title_el = entry.locator("h2 a")
-                if title_el.count() > 0:
-                    title = title_el.first.inner_text().strip()
-                    if not title:
-                        title = "Unbekannter Titel"
-                else:
-                    title = "Unbekannter Titel"
+                title = title_el.inner_text().strip() if title_el else "Unbekannter Titel"
 
-                # Preistext auslesen, Mehrfachpreise behandeln
                 preis_el = entry.locator(".aditem-main--middle--price-shipping--price")
                 preis_text = preis_el.inner_text().strip() if preis_el else ""
                 preis_text = preis_text.replace("€", "").replace(".", "").replace(",", "").strip()
-
-                # Preis mit Strikethrough-Formatierung aufteilen, falls zusammenhängende Zahlen
-                # z.B. "450499" => 450 (alt 499)
-                price = 0
-                price_display = ""
-                numbers = re.findall(r"\d+", preis_text)
-                if len(numbers) == 1:
-                    price = int(numbers[0])
-                    price_display = f"{price} €"
-                elif len(numbers) >= 2:
-                    first = int(numbers[0])
-                    second = int(numbers[1])
-                    price = first
-                    price_display = f"{first} € (~~{second} €~~)"
-                else:
-                    price_display = preis_text or "0 €"
+                try:
+                    price = int(re.findall(r"\d+", preis_text)[0])
+                except (IndexError, ValueError):
+                    price = 0
 
                 detail_page = context.new_page()
                 detail_page.goto(full_link, timeout=60000)
                 detail_page.wait_for_timeout(3000)
 
-                # Alle Bilder sammeln
+                # Bilder über galleryimage-element mit JSON-LD auslesen
                 images = []
                 try:
-                    detail_page.wait_for_selector("img", timeout=3000)
-                    img_elements = detail_page.locator("img")
-                    for j in range(img_elements.count()):
-                        img_url = img_elements.nth(j).get_attribute("src")
-                        if img_url and "https://" in img_url and img_url not in images:
-                            images.append(img_url)
-                except:
-                    pass
+                    detail_page.wait_for_selector("div.galleryimage-element", timeout=5000)
+                    gallery_divs = detail_page.locator("div.galleryimage-element")
+                    count_images = gallery_divs.count()
+
+                    for j in range(count_images):
+                        div = gallery_divs.nth(j)
+                        script_text = div.locator("script[type='application/ld+json']").inner_text()
+                        if script_text:
+                            data = json.loads(script_text)
+                            content_url = data.get("contentUrl")
+                            if content_url and content_url not in images:
+                                images.append(content_url)
+                except Exception as e:
+                    log(f"[⚠️] Fehler beim Sammeln der Bilder via JSON LD: {e}")
 
                 # Beschreibung sammeln
                 beschreibung = ""
@@ -180,14 +167,11 @@ def scrape_ads(
                 else:
                     bewertung = "rot"
 
-                jetzt = datetime.now().strftime("%d.%m.%Y %H:%M")
-
                 ad_data = {
                     "id": ad_id,
                     "modell": modell,
                     "title": title,
                     "price": price,
-                    "price_display": price_display,
                     "link": full_link,
                     "image": images[0] if images else "",
                     "bilder_liste": images,
@@ -195,8 +179,8 @@ def scrape_ads(
                     "beschreibung": beschreibung,
                     "reparaturkosten": rep_summe,
                     "bewertung": bewertung,
-                    "created_at": jetzt,
-                    "updated_at": jetzt
+                    "created_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
+                    "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
                 }
 
                 db.save_advert(ad_data)
