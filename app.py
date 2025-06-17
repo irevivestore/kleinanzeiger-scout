@@ -14,6 +14,32 @@ import sys
 from io import StringIO
 import json
 
+# Hilfsfunktion für Bild-Slider
+def zeige_bilder_slider(bilder_liste, id_prefix):
+    if not bilder_liste:
+        st.text("Keine Bilder verfügbar.")
+        return
+
+    key_index = f"bild_index_{id_prefix}"
+    if key_index not in st.session_state:
+        st.session_state[key_index] = 0
+
+    col1, col2, col3 = st.columns([1, 6, 1])
+
+    with col1:
+        if st.button("⬅️", key=f"prev_{id_prefix}"):
+            if st.session_state[key_index] > 0:
+                st.session_state[key_index] -= 1
+
+    with col3:
+        if st.button("➡️", key=f"next_{id_prefix}"):
+            if st.session_state[key_index] < len(bilder_liste) - 1:
+                st.session_state[key_index] += 1
+
+    with col2:
+        st.image(bilder_liste[st.session_state[key_index]], use_column_width=True)
+        st.caption(f"Bild {st.session_state[key_index] + 1} von {len(bilder_liste)}")
+
 # Initialize
 init_db()
 st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
@@ -131,7 +157,8 @@ if seite == "🔍 Aktive Anzeigen":
         with st.container():
             col1, col2 = st.columns([1, 4])
             with col1:
-                st.image(anzeige['image'], width=130)
+                bilder = anzeige.get("bilder_liste", []) or [anzeige.get("image")]
+                zeige_bilder_slider(bilder, anzeige["id"])
                 st.markdown(
                     f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
                     f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
@@ -187,11 +214,8 @@ elif seite == "📁 Archivierte Anzeigen":
         with st.container():
             col1, col2 = st.columns([1, 4])
             with col1:
-                bilder = anzeige.get("bilder_liste", [])
-                if bilder:
-                    st.image(bilder, width=150, caption=[f"Bild {i+1}" for i in range(len(bilder))])
-                else:
-                    st.image(anzeige['image'], width=130)
+                bilder = anzeige.get("bilder_liste", []) or [anzeige.get("image")]
+                zeige_bilder_slider(bilder, f"archiv_{anzeige['id']}")
                 st.markdown(
                     f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
                     f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
@@ -203,4 +227,7 @@ elif seite == "📁 Archivierte Anzeigen":
                 st.markdown(f"**{anzeige['title']}**")
                 st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
                 st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
-                st.m
+                st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
+
+                with st.expander("📄 Beschreibung"):
+                    st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
