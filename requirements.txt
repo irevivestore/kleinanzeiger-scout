@@ -1,6 +1,6 @@
 streamlit
 playwright
 beautifulsoup4
-git+https://github.com/denizdxyz/Streamlit-Image-Carousel.git
+
 
 
