@@ -1,10 +1,11 @@
+
 import sqlite3
 import datetime
 import json
 
 DB_PATH = "/data/config.db"
 
-def initDb():
+def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
@@ -22,7 +23,7 @@ def initDb():
     ''')
 
     # Neue Spalten prüfen und ggf. ergänzen
-    neueSpalten = {
+    neue_spalten = {
         "beschreibung": "TEXT",
         "man_defekt_keys": "TEXT",
         "created_at": "TEXT",
@@ -31,10 +32,10 @@ def initDb():
     }
 
     c.execute("PRAGMA table_info(anzeigen)")
-    bestehendeSpalten = [row[1] for row in c.fetchall()]
+    bestehende_spalten = [row[1] for row in c.fetchall()]
 
-    for spalte, typ in neueSpalten.items():
-        if spalte not in bestehendeSpalten:
+    for spalte, typ in neue_spalten.items():
+        if spalte not in bestehende_spalten:
             c.execute(f"ALTER TABLE anzeigen ADD COLUMN {spalte} {typ}")
 
     # Konfigurationstabelle erstellen
@@ -50,13 +51,13 @@ def initDb():
     conn.commit()
     conn.close()
 
-def saveAdvert(advert):
+def save_advert(ad):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
     now = datetime.datetime.now().isoformat()
 
-    c.execute("SELECT man_defekt_keys FROM anzeigen WHERE id = ?", (advert["id"],))
+    c.execute("SELECT man_defekt_keys FROM anzeigen WHERE id = ?", (ad["id"],))
     result = c.fetchone()
 
     if result:
@@ -65,14 +66,14 @@ def saveAdvert(advert):
             SET price = ?, title = ?, link = ?, image = ?, versand = ?, beschreibung = ?, updated_at = ?
             WHERE id = ?
         ''', (
-            advert["price"],
-            advert["title"],
-            advert["link"],
-            advert["image"],
-            int(advert["versand"]),
-            advert["beschreibung"],
+            ad["price"],
+            ad["title"],
+            ad["link"],
+            ad["image"],
+            int(ad["versand"]),
+            ad["beschreibung"],
             now,
-            advert["id"]
+            ad["id"]
         ))
     else:
         c.execute('''
@@ -80,14 +81,14 @@ def saveAdvert(advert):
                 id, modell, title, price, link, image, versand, beschreibung, man_defekt_keys, created_at, updated_at, archived
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            advert["id"],
-            advert["modell"],
-            advert["title"],
-            advert["price"],
-            advert["link"],
-            advert["image"],
-            int(advert["versand"]),
-            advert["beschreibung"],
+            ad["id"],
+            ad["modell"],
+            ad["title"],
+            ad["price"],
+            ad["link"],
+            ad["image"],
+            int(ad["versand"]),
+            ad["beschreibung"],
             json.dumps([]),
             now,
             now,
@@ -97,124 +98,105 @@ def saveAdvert(advert):
     conn.commit()
     conn.close()
 
-def getAllAdvertsForModel(model, includeArchived=False):
+def get_all_adverts_for_model(modell, include_archived=False):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    if includeArchived:
-        cursor.execute("SELECT * FROM anzeigen WHERE modell = ?", (model,))
+    if include_archived:
+        cursor.execute("SELECT * FROM anzeigen WHERE modell = ?", (modell,))
     else:
-        cursor.execute("SELECT * FROM anzeigen WHERE modell = ? AND archived = 0", (model,))
+        cursor.execute("SELECT * FROM anzeigen WHERE modell = ? AND archived = 0", (modell,))
     rows = cursor.fetchall()
-    print(f"[DEBUG] Lade {len(rows)} Anzeigen aus DB für Modell {model} (includeArchived={includeArchived})")
+    print(f"[DEBUG] Lade {len(rows)} Anzeigen aus DB für Modell {modell} (include_archived={include_archived})")
     conn.close()
+    return [dict(row) for row in rows]
 
-    # Keys nach camelCase umwandeln
-    return [convertRowToCamelCase(dict(row)) for row in rows]
-
-def getAllAdIdsForModel(model, includeArchived=False):
+def get_all_ad_ids_for_model(modell, include_archived=False):
+    """Gibt eine Liste aller Anzeigen-IDs für ein Modell zurück, optional auch archivierte."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    if includeArchived:
-        cursor.execute("SELECT id FROM anzeigen WHERE modell = ?", (model,))
+    if include_archived:
+        cursor.execute("SELECT id FROM anzeigen WHERE modell = ?", (modell,))
     else:
-        cursor.execute("SELECT id FROM anzeigen WHERE modell = ? AND archived = 0", (model,))
+        cursor.execute("SELECT id FROM anzeigen WHERE modell = ? AND archived = 0", (modell,))
     ids = [row[0] for row in cursor.fetchall()]
     conn.close()
     return ids
 
-def getArchivedAdvertsForModel(model):
+def get_archived_adverts_for_model(modell):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM anzeigen WHERE modell = ? AND archived = 1", (model,))
+    cursor.execute("SELECT * FROM anzeigen WHERE modell = ? AND archived = 1", (modell,))
     rows = cursor.fetchall()
     conn.close()
-    return [convertRowToCamelCase(dict(row)) for row in rows]
+    return [dict(row) for row in rows]
 
-def getAllActiveAdverts():
+def get_all_active_adverts():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM anzeigen WHERE archived = 0")
     rows = cursor.fetchall()
     conn.close()
-    return [convertRowToCamelCase(dict(row)) for row in rows]
+    return [dict(row) for row in rows]
 
-def saveConfig(model, salePrice, targetMargin, repairCostsDict):
+def save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    repString = repr(repairCostsDict)
+    rep_string = repr(reparaturkosten_dict)
 
     c.execute('''
         INSERT OR REPLACE INTO konfigurationen (modell, verkaufspreis, wunsch_marge, reparaturkosten)
         VALUES (?, ?, ?, ?)
-    ''', (model, salePrice, targetMargin, repString))
+    ''', (modell, verkaufspreis, wunsch_marge, rep_string))
 
     conn.commit()
     conn.close()
 
-def loadConfig(model):
+def load_config(modell):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT verkaufspreis, wunsch_marge, reparaturkosten FROM konfigurationen WHERE modell = ?", (model,))
+    c.execute("SELECT verkaufspreis, wunsch_marge, reparaturkosten FROM konfigurationen WHERE modell = ?", (modell,))
     row = c.fetchone()
     conn.close()
 
     if row:
-        salePrice, targetMargin, repString = row
+        verkaufspreis, wunsch_marge, rep_string = row
         try:
-            repairCosts = eval(repString)
+            reparaturkosten = eval(rep_string)
         except:
-            repairCosts = {}
+            reparaturkosten = {}
         return {
-            "salePrice": salePrice,
-            "targetMargin": targetMargin,
-            "repairCosts": repairCosts
+            "verkaufspreis": verkaufspreis,
+            "wunsch_marge": wunsch_marge,
+            "reparaturkosten": reparaturkosten
         }
     else:
         return None
 
-def updateManualDefectKeys(adId, jsonStr):
+def update_manual_defekt_keys(ad_id, json_str):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("UPDATE anzeigen SET man_defekt_keys = ? WHERE id = ?", (jsonStr, adId))
+    c.execute("UPDATE anzeigen SET man_defekt_keys = ? WHERE id = ?", (json_str, ad_id))
     conn.commit()
     conn.close()
 
-def archiveAdvert(adId, archived: bool):
+def archive_advert(ad_id, archived: bool):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("UPDATE anzeigen SET archived = ? WHERE id = ?", (1 if archived else 0, adId))
-    print(f"[DB] Anzeige {adId} archiviert: {archived}")
+    c.execute("UPDATE anzeigen SET archived = ? WHERE id = ?", (1 if archived else 0, ad_id))
+    print(f"[DB] Anzeige {ad_id} archiviert: {archived}")
     conn.commit()
     conn.close()
 
-def isAdvertArchived(adId):
+def is_advert_archived(ad_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT archived FROM anzeigen WHERE id = ?", (adId,))
+    c.execute("SELECT archived FROM anzeigen WHERE id = ?", (ad_id,))
     row = c.fetchone()
     conn.close()
     if row:
         return row[0] == 1
     return False
-
-# Hilfsfunktion: wandelt SQL-Row-Keys in camelCase um
-def convertRowToCamelCase(row):
-    mapping = {
-        "id": "id",
-        "modell": "model",
-        "title": "title",
-        "price": "price",
-        "link": "link",
-        "image": "image",
-        "versand": "versand",
-        "beschreibung": "description",
-        "man_defekt_keys": "manualDefectKeys",
-        "created_at": "createdAt",
-        "updated_at": "updatedAt",
-        "archived": "archived"
-    }
-    return {mapping.get(k, k): v for k, v in row.items()}
