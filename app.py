@@ -17,6 +17,10 @@ from PIL import Image
 import requests
 from io import BytesIO
 
+# Initialize
+init_db()
+st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
+
 # Farben für Styles
 PRIMARY_COLOR = "#4B6FFF"
 SECONDARY_COLOR = "#00D1B2"
