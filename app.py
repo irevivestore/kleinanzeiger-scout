@@ -1,5 +1,5 @@
 import streamlit as st
-from scraper import scrape_ads
+from scraper import scrape_kleinanzeigen
 from db import (
     init_db, save_advert, get_all_adverts_for_model,
     load_config, save_config, update_manual_defekt_keys,
@@ -136,7 +136,7 @@ if seite == "🔍 Aktive Anzeigen":
         st.session_state.log_buffer.truncate(0)
 
         with st.spinner("Suche läuft..."):
-            neue_anzeigen = scrape_ads(
+            neue_anzeigen = scrape_kleinanzeigen(
                 modell,
                 min_price=min_preis,
                 max_price=max_preis,
