@@ -1,9 +1,6 @@
 import streamlit as st
-import sys
-import json
-from io import StringIO, BytesIO
-import requests
-from PIL import Image
+
+st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
 
 from scraper import scrape_kleinanzeigen
 from db import (
@@ -12,51 +9,65 @@ from db import (
     archive_advert, get_archived_adverts_for_model, is_advert_archived
 )
 from config import (
-    REPARATURKOSTEN_DEFAULT, VERKAUFSPREIS_DEFAULT, WUNSCH_MARGE_DEFAULT
+    REPARATURKOSTEN_DEFAULT,
+    VERKAUFSPREIS_DEFAULT,
+    WUNSCH_MARGE_DEFAULT
 )
+import sys
+from io import StringIO
+import json
+from PIL import Image
+import requests
+from io import BytesIO
 
-# Farben & Schrift
+# Farben für Styles
 PRIMARY_COLOR = "#4B6FFF"
 SECONDARY_COLOR = "#00D1B2"
-BACKGROUND_COLOR = "#252850"
-TEXT_COLOR = "#FFFFFF"
-FONT_FAMILY = "Arial, sans-serif"
+BACKGROUND_COLOR = "#2B2E4A"
 
-st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
-
-# CSS für globales Styling
 st.markdown(f"""
     <style>
-    body, .stApp {{
+    .stApp {{
         background-color: {BACKGROUND_COLOR};
-        color: {TEXT_COLOR};
-        font-family: {FONT_FAMILY};
+        color: #D1D1D1;
+    }}
+    h1, h2, h3, h4, h5, h6 {{
+        color: #FFFFFF;
+    }}
+    .card {{
+        background-color: #34385E;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        margin-bottom: 25px;
+    }}
+    .primary-button button {{
+        background-color: {PRIMARY_COLOR} !important;
+        color: white !important;
+        border-radius: 8px !important;
+        padding: 10px 20px !important;
+        border: none !important;
+    }}
+    .archive-button button {{
+        background-color: {SECONDARY_COLOR} !important;
+        color: white !important;
+        border-radius: 8px !important;
+        padding: 10px 20px !important;
+        border: none !important;
     }}
     .stButton>button {{
-        color: white;
-        background-color: {PRIMARY_COLOR};
-        border: none;
-        padding: 0.5em 1em;
-        border-radius: 5px;
-    }}
-    .stTextInput>div>div>input,
-    .stNumberInput>div>div>input {{
-        background-color: #ffffff;
-        color: black;
-    }}
-    .stSelectbox>div>div>div>input {{
-        background-color: #ffffff;
-        color: black;
+        border-radius: 8px;
     }}
     </style>
 """, unsafe_allow_html=True)
 
-# Init DB
+# Initialize
 init_db()
 
 # Navigation
 seite = st.sidebar.radio("📂 Seiten", ["🔍 Aktive Anzeigen", "📁 Archivierte Anzeigen"])
 
+# Modell-Auswahl
 IPHONE_MODELLE = [
     "iPhone X", "iPhone XR", "iPhone XS", "iPhone XS Max",
     "iPhone 11", "iPhone 11 Pro", "iPhone 11 Pro Max",
@@ -102,7 +113,6 @@ def log(message):
     st.session_state.log_lines.append(message)
     log_area.text_area("🛠 Debug-Ausgaben", value="\n".join(st.session_state.log_lines[-50:]), height=300)
 
-# Bildkarussell
 def show_image_carousel(bilder_liste, ad_id):
     if not bilder_liste:
         st.write("Keine Bilder verfügbar.")
@@ -182,8 +192,10 @@ if seite == "🔍 Aktive Anzeigen":
     for anzeige in alle_anzeigen:
         bilder = anzeige.get("bilder_liste", [])
         if isinstance(bilder, str):
-            try: bilder = json.loads(bilder or "[]")
-            except: bilder = []
+            try:
+                bilder = json.loads(bilder or "[]")
+            except:
+                bilder = []
         if not bilder and anzeige.get("image"):
             bilder = [anzeige.get("image")]
 
@@ -194,9 +206,13 @@ if seite == "🔍 Aktive Anzeigen":
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
 
         with st.container():
+            st.markdown('<div class="card">', unsafe_allow_html=True)
             col1, col2 = st.columns([1, 4])
             with col1:
-                show_image_carousel(bilder, anzeige["id"])
+                if bilder:
+                    show_image_carousel(bilder, anzeige["id"])
+                else:
+                    st.text("Keine Bilder verfügbar.")
                 st.markdown(
                     f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
                     f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
@@ -216,20 +232,26 @@ if seite == "🔍 Aktive Anzeigen":
                     key=f"man_defekt_select_{anzeige['id']}"
                 )
 
+                st.markdown('<div class="primary-button">', unsafe_allow_html=True)
                 if st.button("📂 Speichern", key=f"save_{anzeige['id']}"):
                     update_manual_defekt_keys(anzeige["id"], json.dumps(defekte_select))
                     st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
+                st.markdown('<div class="archive-button">', unsafe_allow_html=True)
                 if st.button("💃 Archivieren", key=f"archive_{anzeige['id']}"):
                     archive_advert(anzeige["id"], True)
                     st.success("Anzeige archiviert.")
                     st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
                 with st.expander("📄 Beschreibung"):
                     st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
 elif seite == "📁 Archivierte Anzeigen":
     st.title("📁 Archivierte Anzeigen")
+
     archivierte = get_archived_adverts_for_model(modell)
     if not archivierte:
         st.info("ℹ️ Keine archivierten Anzeigen.")
@@ -237,8 +259,10 @@ elif seite == "📁 Archivierte Anzeigen":
     for anzeige in archivierte:
         bilder = anzeige.get("bilder_liste", [])
         if isinstance(bilder, str):
-            try: bilder = json.loads(bilder or "[]")
-            except: bilder = []
+            try:
+                bilder = json.loads(bilder or "[]")
+            except:
+                bilder = []
         if not bilder and anzeige.get("image"):
             bilder = [anzeige.get("image")]
 
@@ -249,9 +273,13 @@ elif seite == "📁 Archivierte Anzeigen":
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
 
         with st.container():
+            st.markdown('<div class="card">', unsafe_allow_html=True)
             col1, col2 = st.columns([1, 4])
             with col1:
-                show_image_carousel(bilder, "archiv_" + anzeige["id"])
+                if bilder:
+                    show_image_carousel(bilder, "archiv_" + anzeige["id"])
+                else:
+                    st.text("Keine Bilder verfügbar.")
                 st.markdown(
                     f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
                     f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
@@ -263,6 +291,6 @@ elif seite == "📁 Archivierte Anzeigen":
                 st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
                 st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
                 st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
-
                 with st.expander("📄 Beschreibung"):
                     st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
