@@ -83,6 +83,21 @@ def get_all_adverts_for_model(modell, include_archived=False):
         result.append(row_dict)
     return result
 
+def get_all_ad_ids_for_model(modell, include_archived=False):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    query = "SELECT id FROM adverts WHERE modell = ?"
+    params = [modell]
+    if not include_archived:
+        query += " AND archived = 0"
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [row[0] for row in rows]
+
 def get_archived_adverts_for_model(modell):
     return get_all_adverts_for_model(modell, include_archived=True)
 
