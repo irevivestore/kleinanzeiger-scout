@@ -20,20 +20,24 @@ def zeige_bilder_slider(bilder_liste, id_prefix):
         st.text("Keine Bilder verfügbar.")
         return
 
-    key_index = f"bild_index_{id_prefix}"
-    if key_index not in st.session_state:
-        st.session_state[key_index] = 0
+    if len(bilder_liste) == 1:
+        st.image(bilder_liste[0], use_container_width=True)
+        st.caption("1 von 1 Bild")
+    else:
+        key_index = f"bild_index_{id_prefix}"
+        if key_index not in st.session_state:
+            st.session_state[key_index] = 0
 
-    st.session_state[key_index] = st.slider(
-        "Bild auswählen",
-        min_value=0,
-        max_value=len(bilder_liste) - 1,
-        value=st.session_state[key_index],
-        key=f"slider_{id_prefix}"
-    )
+        st.session_state[key_index] = st.slider(
+            "Bild auswählen",
+            min_value=0,
+            max_value=len(bilder_liste) - 1,
+            value=st.session_state[key_index],
+            key=f"slider_{id_prefix}"
+        )
 
-    st.image(bilder_liste[st.session_state[key_index]], use_container_width=True)
-    st.caption(f"Bild {st.session_state[key_index] + 1} von {len(bilder_liste)}")
+        st.image(bilder_liste[st.session_state[key_index]], use_container_width=True)
+        st.caption(f"Bild {st.session_state[key_index] + 1} von {len(bilder_liste)}")
 
 # Initialize
 init_db()
@@ -226,3 +230,4 @@ elif seite == "📁 Archivierte Anzeigen":
 
                 with st.expander("📄 Beschreibung"):
                     st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
+
