@@ -20,6 +20,7 @@ from PIL import Image
 import requests
 from io import BytesIO
 
+
 # Farben für Styles
 PRIMARY_COLOR = "#4B6FFF"
 SECONDARY_COLOR = "#00D1B2"
@@ -37,7 +38,7 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# Initialize DB
+# Initialize
 init_db()
 
 # Navigation
@@ -95,6 +96,7 @@ def show_image_carousel(bilder_liste, ad_id):
         st.write("Keine Bilder verfügbar.")
         return
 
+    # Session State für Bildindex initialisieren
     key_idx = f"img_idx_{ad_id}"
     if key_idx not in st.session_state:
         st.session_state[key_idx] = 0
@@ -172,7 +174,7 @@ if seite == "🔍 Aktive Anzeigen":
         bilder = anzeige.get("bilder_liste", [])
         if isinstance(bilder, str):
             try:
-                bilder = json.loads(bilder)
+                bilder = json.loads(bilder or "[]")
             except:
                 bilder = []
 
@@ -185,7 +187,7 @@ if seite == "🔍 Aktive Anzeigen":
             try:
                 man_defekt_keys = json.loads(raw_keys) if isinstance(raw_keys, str) else raw_keys
             except:
-                pass
+                man_defekt_keys = []
 
         reparatur_summe = sum(reparaturkosten_dict.get(key, 0) for key in man_defekt_keys)
         max_ek = verkaufspreis - wunsch_marge - reparatur_summe
@@ -244,7 +246,7 @@ elif seite == "📁 Archivierte Anzeigen":
         bilder = anzeige.get("bilder_liste", [])
         if isinstance(bilder, str):
             try:
-                bilder = json.loads(bilder)
+                bilder = json.loads(bilder or "[]")
             except:
                 bilder = []
 
@@ -257,7 +259,7 @@ elif seite == "📁 Archivierte Anzeigen":
             try:
                 man_defekt_keys = json.loads(raw_keys) if isinstance(raw_keys, str) else raw_keys
             except:
-                pass
+                man_defekt_keys = []
 
         reparatur_summe = sum(reparaturkosten_dict.get(key, 0) for key in man_defekt_keys)
         max_ek = verkaufspreis - wunsch_marge - reparatur_summe
