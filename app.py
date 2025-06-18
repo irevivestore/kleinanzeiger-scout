@@ -14,29 +14,24 @@ import sys
 from io import StringIO
 import json
 
-# Hilfsfunktion für Bild-Karussell
-def zeige_bilder_karussell(bilder_liste, id_prefix):
+# Debuganzeige aller Bilder nebeneinander
+def zeige_bilder_debug(bilder_liste, id_prefix):
     if not bilder_liste:
         st.text("Keine Bilder verfügbar.")
         return
 
-    key_index = f"bild_index_{id_prefix}"
-    if key_index not in st.session_state:
-        st.session_state[key_index] = 0
+    # Filtere Kleinanzeigen-Logo raus
+    bilder_liste = [
+        url for url in bilder_liste
+        if not url.endswith("logo-kleinanzeigen-horizontal.1f2pao1sh7vgo.svg")
+    ]
 
-    col_prev, col_img, col_next = st.columns([1, 8, 1])
+    st.write(f"{len(bilder_liste)} Bilder gefunden:")
 
-    with col_prev:
-        if st.button("⬅️", key=f"prev_{id_prefix}"):
-            st.session_state[key_index] = (st.session_state[key_index] - 1) % len(bilder_liste)
-
-    with col_img:
-        st.image(bilder_liste[st.session_state[key_index]], use_container_width=True)
-        st.caption(f"Bild {st.session_state[key_index] + 1} von {len(bilder_liste)}")
-
-    with col_next:
-        if st.button("➡️", key=f"next_{id_prefix}"):
-            st.session_state[key_index] = (st.session_state[key_index] + 1) % len(bilder_liste)
+    cols = st.columns(len(bilder_liste))
+    for i, url in enumerate(bilder_liste):
+        with cols[i]:
+            st.image(url, width=150, caption=f"Bild {i+1}", use_column_width=False)
 
 # Initialize
 init_db()
@@ -155,8 +150,8 @@ if seite == "🔍 Aktive Anzeigen":
         with st.container():
             col1, col2 = st.columns([1, 4])
             with col1:
-                bilder = anzeige.get("bilder_liste", []) or [anzeige.get("image")]
-                zeige_bilder_karussell(bilder, anzeige["id"])
+                bilder = anzeige.get("bilder_liste", []) or []
+                zeige_bilder_debug(bilder, anzeige["id"])
                 st.markdown(
                     f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
                     f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
@@ -212,8 +207,8 @@ elif seite == "📁 Archivierte Anzeigen":
         with st.container():
             col1, col2 = st.columns([1, 4])
             with col1:
-                bilder = anzeige.get("bilder_liste", []) or [anzeige.get("image")]
-                zeige_bilder_karussell(bilder, f"archiv_{anzeige['id']}")
+                bilder = anzeige.get("bilder_liste", []) or []
+                zeige_bilder_debug(bilder, f"archiv_{anzeige['id']}")
                 st.markdown(
                     f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
                     f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
