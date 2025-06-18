@@ -14,25 +14,6 @@ import sys
 from io import StringIO
 import json
 
-# Debuganzeige aller Bilder nebeneinander
-def zeige_bilder_debug(bilder_liste, id_prefix):
-    if not bilder_liste:
-        st.text("Keine Bilder verfügbar.")
-        return
-
-    # Filtere Kleinanzeigen-Logo raus
-    bilder_liste = [
-        url for url in bilder_liste
-        if not url.endswith("logo-kleinanzeigen-horizontal.1f2pao1sh7vgo.svg")
-    ]
-
-    st.write(f"{len(bilder_liste)} Bilder gefunden:")
-
-    cols = st.columns(len(bilder_liste))
-    for i, url in enumerate(bilder_liste):
-        with cols[i]:
-            st.image(url, width=150, caption=f"Bild {i+1}", use_column_width=False)
-
 # Initialize
 init_db()
 st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
@@ -135,6 +116,18 @@ if seite == "🔍 Aktive Anzeigen":
         st.info("ℹ️ Keine gespeicherten Anzeigen verfügbar.")
 
     for anzeige in alle_anzeigen:
+
+        # --- HIER DER WICHTIGE FIX FÜR DIE BILDERLISTE ---
+        bilder = anzeige.get("bilder_liste", [])
+        if isinstance(bilder, str):
+            try:
+                bilder = json.loads(bilder)
+            except:
+                bilder = []
+
+        if not bilder and anzeige.get("image"):
+            bilder = [anzeige.get("image")]
+
         man_defekt_keys = []
         raw_keys = anzeige.get("man_defekt_keys")
         if raw_keys:
@@ -150,8 +143,12 @@ if seite == "🔍 Aktive Anzeigen":
         with st.container():
             col1, col2 = st.columns([1, 4])
             with col1:
-                bilder = anzeige.get("bilder_liste", []) or []
-                zeige_bilder_debug(bilder, anzeige["id"])
+                if bilder:
+                    st.write(f"🖼️ {len(bilder)} Bilder gefunden:")
+                    st.image(bilder, width=150)
+                else:
+                    st.text("Keine Bilder verfügbar.")
+
                 st.markdown(
                     f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
                     f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
@@ -192,6 +189,17 @@ elif seite == "📁 Archivierte Anzeigen":
         st.info("ℹ️ Keine archivierten Anzeigen.")
 
     for anzeige in archivierte:
+
+        bilder = anzeige.get("bilder_liste", [])
+        if isinstance(bilder, str):
+            try:
+                bilder = json.loads(bilder)
+            except:
+                bilder = []
+
+        if not bilder and anzeige.get("image"):
+            bilder = [anzeige.get("image")]
+
         man_defekt_keys = []
         raw_keys = anzeige.get("man_defekt_keys")
         if raw_keys:
@@ -207,8 +215,12 @@ elif seite == "📁 Archivierte Anzeigen":
         with st.container():
             col1, col2 = st.columns([1, 4])
             with col1:
-                bilder = anzeige.get("bilder_liste", []) or []
-                zeige_bilder_debug(bilder, f"archiv_{anzeige['id']}")
+                if bilder:
+                    st.write(f"🖼️ {len(bilder)} Bilder gefunden:")
+                    st.image(bilder, width=150)
+                else:
+                    st.text("Keine Bilder verfügbar.")
+
                 st.markdown(
                     f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
                     f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
