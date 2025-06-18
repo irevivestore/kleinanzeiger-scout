@@ -125,6 +125,9 @@ def scrape_ads(
                         if img_src and img_src not in images:
                             images.append(img_src)
                     log(f"[🖼️] {len(images)} Bilder erfolgreich geladen.")
+                    if debug:
+                        for img in images:
+                            log(f"    [🔗] Bild-Link: {img}")
                 except Exception as e:
                     log(f"[⚠️] Fehler beim Sammeln der Bilder: {e}")
 
