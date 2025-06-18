@@ -112,7 +112,7 @@ def show_image_carousel(bilder_liste, ad_id):
         try:
             response = requests.get(img_url)
             img = Image.open(BytesIO(response.content))
-            st.image(img, use_column_width=True)
+            st.image(img, use_container_width=True)  # <--- hier geändert
             st.caption(f"Bild {idx + 1} von {len(bilder_liste)}")
         except:
             st.write("Bild konnte nicht geladen werden.")
