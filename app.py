@@ -1,6 +1,9 @@
 import streamlit as st
-
-st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
+import sys
+import json
+from io import StringIO, BytesIO
+import requests
+from PIL import Image
 
 from scraper import scrape_kleinanzeigen
 from db import (
@@ -9,41 +12,51 @@ from db import (
     archive_advert, get_archived_adverts_for_model, is_advert_archived
 )
 from config import (
-    REPARATURKOSTEN_DEFAULT,
-    VERKAUFSPREIS_DEFAULT,
-    WUNSCH_MARGE_DEFAULT
+    REPARATURKOSTEN_DEFAULT, VERKAUFSPREIS_DEFAULT, WUNSCH_MARGE_DEFAULT
 )
-import sys
-from io import StringIO
-import json
-from PIL import Image
-import requests
-from io import BytesIO
 
-# Farben für Styles
+# Farben & Schrift
 PRIMARY_COLOR = "#4B6FFF"
 SECONDARY_COLOR = "#00D1B2"
 BACKGROUND_COLOR = "#252850"
+TEXT_COLOR = "#FFFFFF"
+FONT_FAMILY = "Arial, sans-serif"
 
+st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
+
+# CSS für globales Styling
 st.markdown(f"""
     <style>
-    .stApp {{
+    body, .stApp {{
         background-color: {BACKGROUND_COLOR};
+        color: {TEXT_COLOR};
+        font-family: {FONT_FAMILY};
     }}
     .stButton>button {{
         color: white;
         background-color: {PRIMARY_COLOR};
+        border: none;
+        padding: 0.5em 1em;
+        border-radius: 5px;
+    }}
+    .stTextInput>div>div>input,
+    .stNumberInput>div>div>input {{
+        background-color: #ffffff;
+        color: black;
+    }}
+    .stSelectbox>div>div>div>input {{
+        background-color: #ffffff;
+        color: black;
     }}
     </style>
 """, unsafe_allow_html=True)
 
-# Initialize
+# Init DB
 init_db()
 
 # Navigation
 seite = st.sidebar.radio("📂 Seiten", ["🔍 Aktive Anzeigen", "📁 Archivierte Anzeigen"])
 
-# Modell-Auswahl
 IPHONE_MODELLE = [
     "iPhone X", "iPhone XR", "iPhone XS", "iPhone XS Max",
     "iPhone 11", "iPhone 11 Pro", "iPhone 11 Pro Max",
@@ -76,7 +89,7 @@ if st.sidebar.button("📂 Konfiguration speichern"):
     save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict)
     st.sidebar.success("✅ Konfiguration gespeichert")
 
-# Hilfsfunktion für Debug Log
+# Debug Log
 if 'log_buffer' not in st.session_state:
     st.session_state.log_buffer = StringIO()
     st.session_state.log_lines = []
@@ -89,6 +102,7 @@ def log(message):
     st.session_state.log_lines.append(message)
     log_area.text_area("🛠 Debug-Ausgaben", value="\n".join(st.session_state.log_lines[-50:]), height=300)
 
+# Bildkarussell
 def show_image_carousel(bilder_liste, ad_id):
     if not bilder_liste:
         st.write("Keine Bilder verfügbar.")
@@ -168,10 +182,8 @@ if seite == "🔍 Aktive Anzeigen":
     for anzeige in alle_anzeigen:
         bilder = anzeige.get("bilder_liste", [])
         if isinstance(bilder, str):
-            try:
-                bilder = json.loads(bilder or "[]")
-            except:
-                bilder = []
+            try: bilder = json.loads(bilder or "[]")
+            except: bilder = []
         if not bilder and anzeige.get("image"):
             bilder = [anzeige.get("image")]
 
@@ -184,10 +196,7 @@ if seite == "🔍 Aktive Anzeigen":
         with st.container():
             col1, col2 = st.columns([1, 4])
             with col1:
-                if bilder:
-                    show_image_carousel(bilder, anzeige["id"])
-                else:
-                    st.text("Keine Bilder verfügbar.")
+                show_image_carousel(bilder, anzeige["id"])
                 st.markdown(
                     f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
                     f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
@@ -221,7 +230,6 @@ if seite == "🔍 Aktive Anzeigen":
 
 elif seite == "📁 Archivierte Anzeigen":
     st.title("📁 Archivierte Anzeigen")
-
     archivierte = get_archived_adverts_for_model(modell)
     if not archivierte:
         st.info("ℹ️ Keine archivierten Anzeigen.")
@@ -229,10 +237,8 @@ elif seite == "📁 Archivierte Anzeigen":
     for anzeige in archivierte:
         bilder = anzeige.get("bilder_liste", [])
         if isinstance(bilder, str):
-            try:
-                bilder = json.loads(bilder or "[]")
-            except:
-                bilder = []
+            try: bilder = json.loads(bilder or "[]")
+            except: bilder = []
         if not bilder and anzeige.get("image"):
             bilder = [anzeige.get("image")]
 
@@ -245,10 +251,7 @@ elif seite == "📁 Archivierte Anzeigen":
         with st.container():
             col1, col2 = st.columns([1, 4])
             with col1:
-                if bilder:
-                    show_image_carousel(bilder, "archiv_" + anzeige["id"])
-                else:
-                    st.text("Keine Bilder verfügbar.")
+                show_image_carousel(bilder, "archiv_" + anzeige["id"])
                 st.markdown(
                     f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
                     f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
@@ -260,5 +263,6 @@ elif seite == "📁 Archivierte Anzeigen":
                 st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
                 st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
                 st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
+
                 with st.expander("📄 Beschreibung"):
                     st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
