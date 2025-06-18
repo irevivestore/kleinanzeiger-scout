@@ -20,11 +20,10 @@ from PIL import Image
 import requests
 from io import BytesIO
 
-
 # Farben für Styles
 PRIMARY_COLOR = "#4B6FFF"
 SECONDARY_COLOR = "#00D1B2"
-BACKGROUND_COLOR = "#F4F4F4"
+BACKGROUND_COLOR = "#252850"
 
 st.markdown(f"""
     <style>
@@ -77,7 +76,7 @@ if st.sidebar.button("📂 Konfiguration speichern"):
     save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict)
     st.sidebar.success("✅ Konfiguration gespeichert")
 
-# Hilfsfunktion zum Debug-Log
+# Hilfsfunktion für Debug Log
 if 'log_buffer' not in st.session_state:
     st.session_state.log_buffer = StringIO()
     st.session_state.log_lines = []
@@ -90,13 +89,11 @@ def log(message):
     st.session_state.log_lines.append(message)
     log_area.text_area("🛠 Debug-Ausgaben", value="\n".join(st.session_state.log_lines[-50:]), height=300)
 
-
 def show_image_carousel(bilder_liste, ad_id):
     if not bilder_liste:
         st.write("Keine Bilder verfügbar.")
         return
 
-    # Session State für Bildindex initialisieren
     key_idx = f"img_idx_{ad_id}"
     if key_idx not in st.session_state:
         st.session_state[key_idx] = 0
@@ -110,16 +107,15 @@ def show_image_carousel(bilder_liste, ad_id):
     with col2:
         img_url = bilder_liste[idx]
         try:
-            response = requests.get(img_url)
+            response = requests.get(img_url, timeout=5)
             img = Image.open(BytesIO(response.content))
-            st.image(img, use_container_width=True)  # <--- hier geändert
+            st.image(img, use_container_width=True)
             st.caption(f"Bild {idx + 1} von {len(bilder_liste)}")
-        except:
-            st.write("Bild konnte nicht geladen werden.")
+        except Exception as e:
+            st.warning(f"Bild konnte nicht geladen werden: {str(e)}")
     with col3:
         if st.button("→", key=f"next_{ad_id}"):
             st.session_state[key_idx] = (idx + 1) % len(bilder_liste)
-
 
 # Seitenlogik
 if seite == "🔍 Aktive Anzeigen":
@@ -170,25 +166,17 @@ if seite == "🔍 Aktive Anzeigen":
         st.info("ℹ️ Keine gespeicherten Anzeigen verfügbar.")
 
     for anzeige in alle_anzeigen:
-
         bilder = anzeige.get("bilder_liste", [])
         if isinstance(bilder, str):
             try:
                 bilder = json.loads(bilder or "[]")
             except:
                 bilder = []
-
         if not bilder and anzeige.get("image"):
             bilder = [anzeige.get("image")]
 
-        man_defekt_keys = []
         raw_keys = anzeige.get("man_defekt_keys")
-        if raw_keys:
-            try:
-                man_defekt_keys = json.loads(raw_keys) if isinstance(raw_keys, str) else raw_keys
-            except:
-                man_defekt_keys = []
-
+        man_defekt_keys = json.loads(raw_keys) if raw_keys else []
         reparatur_summe = sum(reparaturkosten_dict.get(key, 0) for key in man_defekt_keys)
         max_ek = verkaufspreis - wunsch_marge - reparatur_summe
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
@@ -197,18 +185,15 @@ if seite == "🔍 Aktive Anzeigen":
             col1, col2 = st.columns([1, 4])
             with col1:
                 if bilder:
-                    st.write(f"🖼️ {len(bilder)} Bilder gefunden:")
                     show_image_carousel(bilder, anzeige["id"])
                 else:
                     st.text("Keine Bilder verfügbar.")
-
                 st.markdown(
                     f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
                     f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
                     f"📈 Gewinn: <b>{pot_gewinn:.2f} €</b></p>",
                     unsafe_allow_html=True
                 )
-
             with col2:
                 st.markdown(f"**{anzeige['title']}**")
                 st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
@@ -224,12 +209,12 @@ if seite == "🔍 Aktive Anzeigen":
 
                 if st.button("📂 Speichern", key=f"save_{anzeige['id']}"):
                     update_manual_defekt_keys(anzeige["id"], json.dumps(defekte_select))
-                    st.experimental_rerun()
+                    st.rerun()
 
                 if st.button("💃 Archivieren", key=f"archive_{anzeige['id']}"):
                     archive_advert(anzeige["id"], True)
                     st.success("Anzeige archiviert.")
-                    st.experimental_rerun()
+                    st.rerun()
 
                 with st.expander("📄 Beschreibung"):
                     st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
@@ -242,25 +227,17 @@ elif seite == "📁 Archivierte Anzeigen":
         st.info("ℹ️ Keine archivierten Anzeigen.")
 
     for anzeige in archivierte:
-
         bilder = anzeige.get("bilder_liste", [])
         if isinstance(bilder, str):
             try:
                 bilder = json.loads(bilder or "[]")
             except:
                 bilder = []
-
         if not bilder and anzeige.get("image"):
             bilder = [anzeige.get("image")]
 
-        man_defekt_keys = []
         raw_keys = anzeige.get("man_defekt_keys")
-        if raw_keys:
-            try:
-                man_defekt_keys = json.loads(raw_keys) if isinstance(raw_keys, str) else raw_keys
-            except:
-                man_defekt_keys = []
-
+        man_defekt_keys = json.loads(raw_keys) if raw_keys else []
         reparatur_summe = sum(reparaturkosten_dict.get(key, 0) for key in man_defekt_keys)
         max_ek = verkaufspreis - wunsch_marge - reparatur_summe
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
@@ -269,23 +246,19 @@ elif seite == "📁 Archivierte Anzeigen":
             col1, col2 = st.columns([1, 4])
             with col1:
                 if bilder:
-                    st.write(f"🖼️ {len(bilder)} Bilder gefunden:")
                     show_image_carousel(bilder, "archiv_" + anzeige["id"])
                 else:
                     st.text("Keine Bilder verfügbar.")
-
                 st.markdown(
                     f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
                     f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
                     f"📈 Gewinn: <b>{pot_gewinn:.2f} €</b></p>",
                     unsafe_allow_html=True
                 )
-
             with col2:
                 st.markdown(f"**{anzeige['title']}**")
                 st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
                 st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
                 st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
-
                 with st.expander("📄 Beschreibung"):
                     st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
