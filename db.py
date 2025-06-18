@@ -1,4 +1,3 @@
-
 import sqlite3
 import datetime
 import json
@@ -28,7 +27,8 @@ def init_db():
         "man_defekt_keys": "TEXT",
         "created_at": "TEXT",
         "updated_at": "TEXT",
-        "archived": "INTEGER DEFAULT 0"
+        "archived": "INTEGER DEFAULT 0",
+        "bilder_liste": "TEXT"
     }
 
     c.execute("PRAGMA table_info(anzeigen)")
@@ -60,10 +60,12 @@ def save_advert(ad):
     c.execute("SELECT man_defekt_keys FROM anzeigen WHERE id = ?", (ad["id"],))
     result = c.fetchone()
 
+    bilder_liste_json = json.dumps(ad.get("bilder_liste", []))
+
     if result:
         c.execute('''
             UPDATE anzeigen
-            SET price = ?, title = ?, link = ?, image = ?, versand = ?, beschreibung = ?, updated_at = ?
+            SET price = ?, title = ?, link = ?, image = ?, versand = ?, beschreibung = ?, bilder_liste = ?, updated_at = ?
             WHERE id = ?
         ''', (
             ad["price"],
@@ -72,14 +74,15 @@ def save_advert(ad):
             ad["image"],
             int(ad["versand"]),
             ad["beschreibung"],
+            bilder_liste_json,
             now,
             ad["id"]
         ))
     else:
         c.execute('''
             INSERT INTO anzeigen (
-                id, modell, title, price, link, image, versand, beschreibung, man_defekt_keys, created_at, updated_at, archived
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                id, modell, title, price, link, image, versand, beschreibung, man_defekt_keys, created_at, updated_at, archived, bilder_liste
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             ad["id"],
             ad["modell"],
@@ -92,7 +95,8 @@ def save_advert(ad):
             json.dumps([]),
             now,
             now,
-            0
+            0,
+            bilder_liste_json
         ))
 
     conn.commit()
@@ -107,12 +111,19 @@ def get_all_adverts_for_model(modell, include_archived=False):
     else:
         cursor.execute("SELECT * FROM anzeigen WHERE modell = ? AND archived = 0", (modell,))
     rows = cursor.fetchall()
-    print(f"[DEBUG] Lade {len(rows)} Anzeigen aus DB für Modell {modell} (include_archived={include_archived})")
     conn.close()
-    return [dict(row) for row in rows]
+
+    result = []
+    for row in rows:
+        row_dict = dict(row)
+        # bilder_liste aus JSON wiederherstellen
+        row_dict["bilder_liste"] = json.loads(row_dict.get("bilder_liste", "[]"))
+        result.append(row_dict)
+
+    print(f"[DEBUG] Lade {len(result)} Anzeigen aus DB für Modell {modell} (include_archived={include_archived})")
+    return result
 
 def get_all_ad_ids_for_model(modell, include_archived=False):
-    """Gibt eine Liste aller Anzeigen-IDs für ein Modell zurück, optional auch archivierte."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     if include_archived:
@@ -130,7 +141,14 @@ def get_archived_adverts_for_model(modell):
     cursor.execute("SELECT * FROM anzeigen WHERE modell = ? AND archived = 1", (modell,))
     rows = cursor.fetchall()
     conn.close()
-    return [dict(row) for row in rows]
+
+    result = []
+    for row in rows:
+        row_dict = dict(row)
+        row_dict["bilder_liste"] = json.loads(row_dict.get("bilder_liste", "[]"))
+        result.append(row_dict)
+
+    return result
 
 def get_all_active_adverts():
     conn = sqlite3.connect(DB_PATH)
@@ -139,7 +157,14 @@ def get_all_active_adverts():
     cursor.execute("SELECT * FROM anzeigen WHERE archived = 0")
     rows = cursor.fetchall()
     conn.close()
-    return [dict(row) for row in rows]
+
+    result = []
+    for row in rows:
+        row_dict = dict(row)
+        row_dict["bilder_liste"] = json.loads(row_dict.get("bilder_liste", "[]"))
+        result.append(row_dict)
+
+    return result
 
 def save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict):
     conn = sqlite3.connect(DB_PATH)
