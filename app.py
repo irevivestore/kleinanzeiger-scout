@@ -20,8 +20,6 @@ from PIL import Image
 import requests
 from io import BytesIO
 
-
-
 # Farben für Styles
 PRIMARY_COLOR = "#4B6FFF"
 SECONDARY_COLOR = "#00D1B2"
@@ -39,9 +37,8 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# Initialize
+# Initialize DB
 init_db()
-st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
 
 # Navigation
 seite = st.sidebar.radio("📂 Seiten", ["🔍 Aktive Anzeigen", "📁 Archivierte Anzeigen"])
@@ -98,7 +95,6 @@ def show_image_carousel(bilder_liste, ad_id):
         st.write("Keine Bilder verfügbar.")
         return
 
-    # Session State für Bildindex initialisieren
     key_idx = f"img_idx_{ad_id}"
     if key_idx not in st.session_state:
         st.session_state[key_idx] = 0
@@ -200,7 +196,6 @@ if seite == "🔍 Aktive Anzeigen":
             with col1:
                 if bilder:
                     st.write(f"🖼️ {len(bilder)} Bilder gefunden:")
-                    # Bild-Karussell anzeigen
                     show_image_carousel(bilder, anzeige["id"])
                 else:
                     st.text("Keine Bilder verfügbar.")
