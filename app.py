@@ -1,6 +1,5 @@
 import streamlit as st
-# Initialize
-init_db()
+
 st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
 
 from scraper import scrape_kleinanzeigen
