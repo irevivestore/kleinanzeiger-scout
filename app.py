@@ -209,7 +209,17 @@ if seite == "🔍 Aktive Anzeigen":
             bilder = [anzeige.get("image")]
 
         raw_keys = anzeige.get("man_defekt_keys")
-        man_defekt_keys = json.loads(raw_keys) if raw_keys else []
+        # HIER IST DIE KORREKTUR:
+        if isinstance(raw_keys, list):
+            man_defekt_keys = raw_keys
+        elif raw_keys:
+            try:
+                man_defekt_keys = json.loads(raw_keys)
+            except:
+                man_defekt_keys = []
+        else:
+            man_defekt_keys = []
+
         reparatur_summe = sum(reparaturkosten_dict.get(key, 0) for key in man_defekt_keys)
         max_ek = verkaufspreis - wunsch_marge - reparatur_summe
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
@@ -237,7 +247,7 @@ if seite == "🔍 Aktive Anzeigen":
             col_save, col_archive = st.columns(2)
             with col_save:
                 if st.button("Speichern", key=f"save_{anzeige['id']}"):
-                    update_manual_defekt_keys(anzeige["id"], json.dumps(defekte_select))
+                    update_manual_defekt_keys(anzeige["id"], defekte_select)
                     st.rerun()
 
             with col_archive:
@@ -249,7 +259,6 @@ if seite == "🔍 Aktive Anzeigen":
             with st.expander("📄 Beschreibung"):
                 st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
 
-# Archiv-Seite bleibt identisch
 elif seite == "📁 Archivierte Anzeigen":
     st.markdown(f"<h1 style='color: {HEADER_COLOR};'>Archivierte Anzeigen</h1>", unsafe_allow_html=True)
     archivierte = get_archived_adverts_for_model(modell)
@@ -257,4 +266,4 @@ elif seite == "📁 Archivierte Anzeigen":
         st.info("ℹ️ Keine archivierten Anzeigen.")
     for anzeige in archivierte:
         st.markdown(f"### [{anzeige['title']}]({anzeige['link']})")
-        # hier könnte man identisch erweitern wie oben
+        # Hier kann später identisch aufgebaut werden
