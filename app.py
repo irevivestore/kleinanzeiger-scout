@@ -25,7 +25,7 @@ PRIMARY_COLOR = "#4B6FFF"
 SECONDARY_COLOR = "#00D1B2"
 BACKGROUND_COLOR = "#252850"
 
-# Material Icons und CSS Styling einbinden
+# CSS Styling einbinden
 st.markdown(f"""
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
@@ -40,16 +40,12 @@ st.markdown(f"""
         padding: 0.5em 1.5em;
         font-weight: bold;
     }}
-    .archive-button>button {{
-        background-color: {SECONDARY_COLOR} !important;
-        color: white !important;
-    }}
     .card {{
         background-color: #2E2E3A;
-        padding: 20px;
         border-radius: 12px;
-        box-shadow: 0 0 15px rgba(0,0,0,0.3);
-        margin-bottom: 20px;
+        padding: 20px;
+        margin-bottom: 25px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }}
     .material-icons {{
         vertical-align: middle;
@@ -194,43 +190,42 @@ if seite == "🔍 Aktive Anzeigen":
         max_ek = verkaufspreis - wunsch_marge - reparatur_summe
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
 
-        with st.container():
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            col1, col2 = st.columns([1, 4])
-            with col1:
-                show_image_carousel(bilder, anzeige["id"])
-                st.markdown(f"""
-                    <p style='font-size: small;'>
-                    <span class="material-icons">sell</span> Preis: <b>{anzeige['price']} €</b><br>
-                    <span class="material-icons">price_change</span> Max. EK: <b>{max_ek:.2f} €</b><br>
-                    <span class="material-icons">trending_up</span> Gewinn: <b>{pot_gewinn:.2f} €</b>
-                    </p>
-                """, unsafe_allow_html=True)
-            with col2:
-                st.markdown(f"**{anzeige['title']}**")
-                st.markdown(f"[<span class='material-icons'>open_in_new</span> Anzeige öffnen]({anzeige['link']})", unsafe_allow_html=True)
-                st.markdown(f"<span class='material-icons'>build</span> Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}", unsafe_allow_html=True)
-                st.markdown(f"<span class='material-icons'>construction</span> Reparaturkosten: {reparatur_summe} €", unsafe_allow_html=True)
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            show_image_carousel(bilder, anzeige["id"])
+            st.markdown(f"""
+                <p style='font-size: small;'>
+                <span class="material-icons">sell</span> Preis: <b>{anzeige['price']} €</b><br>
+                <span class="material-icons">price_change</span> Max. EK: <b>{max_ek:.2f} €</b><br>
+                <span class="material-icons">trending_up</span> Gewinn: <b>{pot_gewinn:.2f} €</b>
+                </p>
+            """, unsafe_allow_html=True)
+        with col2:
+            st.markdown(f"**{anzeige['title']}**")
+            st.markdown(f"[<span class='material-icons'>open_in_new</span> Anzeige öffnen]({anzeige['link']})", unsafe_allow_html=True)
+            st.markdown(f"<span class='material-icons'>build</span> Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}", unsafe_allow_html=True)
+            st.markdown(f"<span class='material-icons'>construction</span> Reparaturkosten: {reparatur_summe} €", unsafe_allow_html=True)
 
-                defekte_select = st.multiselect(
-                    "🔧 Defekte wählen:",
-                    options=list(reparaturkosten_dict.keys()),
-                    default=man_defekt_keys,
-                    key=f"man_defekt_select_{anzeige['id']}"
-                )
+            defekte_select = st.multiselect(
+                "🔧 Defekte wählen:",
+                options=list(reparaturkosten_dict.keys()),
+                default=man_defekt_keys,
+                key=f"man_defekt_select_{anzeige['id']}"
+            )
 
-                if st.button("📂 Speichern", key=f"save_{anzeige['id']}"):
-                    update_manual_defekt_keys(anzeige["id"], json.dumps(defekte_select))
-                    st.rerun()
+            if st.button("📂 Speichern", key=f"save_{anzeige['id']}"):
+                update_manual_defekt_keys(anzeige["id"], json.dumps(defekte_select))
+                st.rerun()
 
-                if st.button("💃 Archivieren", key=f"archive_{anzeige['id']}"):
-                    archive_advert(anzeige["id"], True)
-                    st.success("Anzeige archiviert.")
-                    st.rerun()
+            if st.button("💃 Archivieren", key=f"archive_{anzeige['id']}"):
+                archive_advert(anzeige["id"], True)
+                st.success("Anzeige archiviert.")
+                st.rerun()
 
-                with st.expander("📄 Beschreibung"):
-                    st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+            with st.expander("📄 Beschreibung"):
+                st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 elif seite == "📁 Archivierte Anzeigen":
     st.title('<span class="material-icons">archive</span> Archivierte Anzeigen', unsafe_allow_html=True)
@@ -255,23 +250,22 @@ elif seite == "📁 Archivierte Anzeigen":
         max_ek = verkaufspreis - wunsch_marge - reparatur_summe
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
 
-        with st.container():
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            col1, col2 = st.columns([1, 4])
-            with col1:
-                show_image_carousel(bilder, "archiv_" + anzeige["id"])
-                st.markdown(f"""
-                    <p style='font-size: small;'>
-                    <span class="material-icons">sell</span> Preis: <b>{anzeige['price']} €</b><br>
-                    <span class="material-icons">price_change</span> Max. EK: <b>{max_ek:.2f} €</b><br>
-                    <span class="material-icons">trending_up</span> Gewinn: <b>{pot_gewinn:.2f} €</b>
-                    </p>
-                """, unsafe_allow_html=True)
-            with col2:
-                st.markdown(f"**{anzeige['title']}**")
-                st.markdown(f"[<span class='material-icons'>open_in_new</span> Anzeige öffnen]({anzeige['link']})", unsafe_allow_html=True)
-                st.markdown(f"<span class='material-icons'>build</span> Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}", unsafe_allow_html=True)
-                st.markdown(f"<span class='material-icons'>construction</span> Reparaturkosten: {reparatur_summe} €", unsafe_allow_html=True)
-                with st.expander("📄 Beschreibung"):
-                    st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            show_image_carousel(bilder, "archiv_" + anzeige["id"])
+            st.markdown(f"""
+                <p style='font-size: small;'>
+                <span class="material-icons">sell</span> Preis: <b>{anzeige['price']} €</b><br>
+                <span class="material-icons">price_change</span> Max. EK: <b>{max_ek:.2f} €</b><br>
+                <span class="material-icons">trending_up</span> Gewinn: <b>{pot_gewinn:.2f} €</b>
+                </p>
+            """, unsafe_allow_html=True)
+        with col2:
+            st.markdown(f"**{anzeige['title']}**")
+            st.markdown(f"[<span class='material-icons'>open_in_new</span> Anzeige öffnen]({anzeige['link']})", unsafe_allow_html=True)
+            st.markdown(f"<span class='material-icons'>build</span> Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}", unsafe_allow_html=True)
+            st.markdown(f"<span class='material-icons'>construction</span> Reparaturkosten: {reparatur_summe} €", unsafe_allow_html=True)
+            with st.expander("📄 Beschreibung"):
+                st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
