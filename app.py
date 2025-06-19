@@ -38,6 +38,9 @@ st.markdown(f"""
         border-radius: 8px;
         padding: 10px 20px;
     }}
+    label {{
+        color: white !important;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -80,7 +83,7 @@ if st.sidebar.button("📂 Konfiguration speichern"):
     save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict)
     st.sidebar.success("✅ Konfiguration gespeichert")
 
-# Hilfsfunktion für Debug Log
+# Debug Log
 if 'log_buffer' not in st.session_state:
     st.session_state.log_buffer = StringIO()
     st.session_state.log_lines = []
@@ -103,21 +106,21 @@ def show_image_carousel(bilder_liste, ad_id):
         st.session_state[key_idx] = 0
     idx = st.session_state[key_idx]
 
-    col1, col2, col3 = st.columns([1, 6, 1])
+    img_url = bilder_liste[idx]
+    try:
+        response = requests.get(img_url, timeout=5)
+        img = Image.open(BytesIO(response.content))
+        st.image(img, use_container_width=True)
+        st.caption(f"Bild {idx + 1} von {len(bilder_liste)}")
+    except Exception as e:
+        st.warning(f"Bild konnte nicht geladen werden: {str(e)}")
 
+    # Die beiden Pfeile unter das Bild nebeneinander
+    col1, col2 = st.columns([1, 1])
     with col1:
         if st.button("←", key=f"prev_{ad_id}"):
             st.session_state[key_idx] = (idx - 1) % len(bilder_liste)
     with col2:
-        img_url = bilder_liste[idx]
-        try:
-            response = requests.get(img_url, timeout=5)
-            img = Image.open(BytesIO(response.content))
-            st.image(img, use_container_width=True)
-            st.caption(f"Bild {idx + 1} von {len(bilder_liste)}")
-        except Exception as e:
-            st.warning(f"Bild konnte nicht geladen werden: {str(e)}")
-    with col3:
         if st.button("→", key=f"next_{ad_id}"):
             st.session_state[key_idx] = (idx + 1) % len(bilder_liste)
 
@@ -193,8 +196,7 @@ if seite == "🔍 Aktive Anzeigen":
                 else:
                     st.text("Keine Bilder verfügbar.")
             with col2:
-                st.markdown(f"**{anzeige['title']}**")
-                st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
+                st.markdown(f"### [{anzeige['title']}]({anzeige['link']})")
                 st.write(f"💰 Preis: {anzeige['price']} €")
                 st.write(f"📉 Max. EK: {max_ek:.2f} €")
                 st.write(f"📈 Gewinn: {pot_gewinn:.2f} €")
@@ -208,15 +210,13 @@ if seite == "🔍 Aktive Anzeigen":
                     key=f"man_defekt_select_{anzeige['id']}"
                 )
 
-                if st.button("📂 Speichern", key=f"save_{anzeige['id']}"):
+                if st.button("Speichern", key=f"save_{anzeige['id']}"):
                     update_manual_defekt_keys(anzeige["id"], json.dumps(defekte_select))
                     st.rerun()
 
-                if st.button("💃 Archivieren", key=f"archive_{anzeige['id']}"):
+                if st.button("Archivieren", key=f"archive_{anzeige['id']}"):
                     archive_advert(anzeige["id"], True)
                     st.rerun()
 
-                with st.expander("📄 Beschreibung"):
+                with st.expander("Beschreibung"):
                     st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
-
-# Archivierte Anzeigen bleibt analog (du kannst bei Bedarf sagen, dann bauen wir das auch nochmal sauber in der gleichen Weise).
