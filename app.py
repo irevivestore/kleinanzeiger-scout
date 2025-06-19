@@ -5,6 +5,8 @@ from io import StringIO, BytesIO
 from PIL import Image
 import requests
 
+st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
+
 from scraper import scrape_kleinanzeigen
 from db import (
     init_db, save_advert, get_all_adverts_for_model,
@@ -51,7 +53,7 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
+
 init_db()
 
 # Sidebar Navigation
