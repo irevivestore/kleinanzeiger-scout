@@ -1,10 +1,12 @@
 import sqlite3
 import json
+import datetime
 from config import DB_PATH
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS adverts (
         id TEXT PRIMARY KEY,
@@ -16,9 +18,23 @@ def init_db():
         image TEXT,
         bilder_liste TEXT,
         man_defekt_keys TEXT,
-        archived INTEGER DEFAULT 0
+        archived INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
     )
     """)
+
+    # Bestehende Spalten ergänzen (Migration)
+    try:
+        cursor.execute("ALTER TABLE adverts ADD COLUMN created_at TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE adverts ADD COLUMN updated_at TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS config (
         modell TEXT PRIMARY KEY,
@@ -27,28 +43,66 @@ def init_db():
         reparaturkosten TEXT
     )
     """)
+
     conn.commit()
     conn.close()
 
 def save_advert(advert):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("""
-        INSERT OR REPLACE INTO adverts 
-        (id, modell, title, beschreibung, price, link, image, bilder_liste, man_defekt_keys, archived)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT archived FROM adverts WHERE id = ?), 0))
-    """, (
-        advert["id"],
-        advert.get("modell"),
-        advert.get("title"),
-        advert.get("beschreibung"),
-        advert.get("price"),
-        advert.get("link"),
-        advert.get("image"),
-        json.dumps(advert.get("bilder_liste", [])),
-        json.dumps(advert.get("man_defekt_keys", [])),
-        advert["id"]
-    ))
+
+    now = datetime.datetime.now().strftime("%Y-%m-%d")
+
+    # Prüfen ob die Anzeige schon existiert
+    cursor.execute("SELECT id, created_at FROM adverts WHERE id = ?", (advert["id"],))
+    row = cursor.fetchone()
+
+    if row:
+        # Update bestehenden Eintrag
+        created_at_existing = row[1] or now
+        cursor.execute("""
+            UPDATE adverts SET
+                modell = ?,
+                title = ?,
+                beschreibung = ?,
+                price = ?,
+                link = ?,
+                image = ?,
+                bilder_liste = ?,
+                updated_at = ?
+            WHERE id = ?
+        """, (
+            advert.get("modell"),
+            advert.get("title"),
+            advert.get("beschreibung"),
+            advert.get("price"),
+            advert.get("link"),
+            advert.get("image"),
+            json.dumps(advert.get("bilder_liste", [])),
+            now,
+            advert["id"]
+        ))
+    else:
+        # Neuer Eintrag
+        cursor.execute("""
+            INSERT INTO adverts (
+                id, modell, title, beschreibung, price, link, image,
+                bilder_liste, man_defekt_keys, archived, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+        """, (
+            advert["id"],
+            advert.get("modell"),
+            advert.get("title"),
+            advert.get("beschreibung"),
+            advert.get("price"),
+            advert.get("link"),
+            advert.get("image"),
+            json.dumps(advert.get("bilder_liste", [])),
+            json.dumps(advert.get("man_defekt_keys", [])),
+            now,
+            now
+        ))
+
     conn.commit()
     conn.close()
 
@@ -70,14 +124,10 @@ def get_all_adverts_for_model(modell, include_archived=False):
     for row in rows:
         row_dict = dict(row)
 
-        bilder_raw = row_dict.get("bilder_liste")
-        if bilder_raw is None:
-            bilder_raw = "[]"
+        bilder_raw = row_dict.get("bilder_liste") or "[]"
         row_dict["bilder_liste"] = json.loads(bilder_raw)
 
-        man_defekt_raw = row_dict.get("man_defekt_keys")
-        if man_defekt_raw is None:
-            man_defekt_raw = "[]"
+        man_defekt_raw = row_dict.get("man_defekt_keys") or "[]"
         row_dict["man_defekt_keys"] = json.loads(man_defekt_raw)
 
         result.append(row_dict)
