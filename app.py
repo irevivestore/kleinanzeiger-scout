@@ -23,45 +23,42 @@ from io import BytesIO
 # Farben für Styles
 PRIMARY_COLOR = "#4B6FFF"
 SECONDARY_COLOR = "#00D1B2"
-BACKGROUND_COLOR = "#2B2E4A"
+BACKGROUND_COLOR = "#252850"
 
+# Material Icons und CSS Styling einbinden
 st.markdown(f"""
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
     .stApp {{
         background-color: {BACKGROUND_COLOR};
-        color: #D1D1D1;
-    }}
-    h1, h2, h3, h4, h5, h6 {{
-        color: #FFFFFF;
-    }}
-    .card {{
-        background-color: #34385E;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-        margin-bottom: 25px;
-    }}
-    .primary-button button {{
-        background-color: {PRIMARY_COLOR} !important;
-        color: white !important;
-        border-radius: 8px !important;
-        padding: 10px 20px !important;
-        border: none !important;
-    }}
-    .archive-button button {{
-        background-color: {SECONDARY_COLOR} !important;
-        color: white !important;
-        border-radius: 8px !important;
-        padding: 10px 20px !important;
-        border: none !important;
+        color: white;
     }}
     .stButton>button {{
+        background-color: {PRIMARY_COLOR};
+        color: white;
         border-radius: 8px;
+        padding: 0.5em 1.5em;
+        font-weight: bold;
+    }}
+    .archive-button>button {{
+        background-color: {SECONDARY_COLOR} !important;
+        color: white !important;
+    }}
+    .card {{
+        background-color: #2E2E3A;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 0 15px rgba(0,0,0,0.3);
+        margin-bottom: 20px;
+    }}
+    .material-icons {{
+        vertical-align: middle;
+        font-size: 20px;
     }}
     </style>
 """, unsafe_allow_html=True)
 
-# Initialize
+# Initialize DB
 init_db()
 
 # Navigation
@@ -82,6 +79,7 @@ if "modell" not in st.session_state:
 modell = st.sidebar.selectbox("Modell auswählen", IPHONE_MODELLE, index=IPHONE_MODELLE.index(st.session_state.modell))
 st.session_state.modell = modell
 
+# Konfiguration laden
 config = load_config(modell) or {
     "verkaufspreis": VERKAUFSPREIS_DEFAULT,
     "wunsch_marge": WUNSCH_MARGE_DEFAULT,
@@ -104,27 +102,23 @@ if st.sidebar.button("📂 Konfiguration speichern"):
 if 'log_buffer' not in st.session_state:
     st.session_state.log_buffer = StringIO()
     st.session_state.log_lines = []
-
 log_area = st.empty()
-
 def log(message):
     print(message, file=sys.stderr)
     st.session_state.log_buffer.write(message + "\n")
     st.session_state.log_lines.append(message)
     log_area.text_area("🛠 Debug-Ausgaben", value="\n".join(st.session_state.log_lines[-50:]), height=300)
 
+# Bilder-Karussell
 def show_image_carousel(bilder_liste, ad_id):
     if not bilder_liste:
         st.write("Keine Bilder verfügbar.")
         return
-
     key_idx = f"img_idx_{ad_id}"
     if key_idx not in st.session_state:
         st.session_state[key_idx] = 0
     idx = st.session_state[key_idx]
-
     col1, col2, col3 = st.columns([1, 6, 1])
-
     with col1:
         if st.button("←", key=f"prev_{ad_id}"):
             st.session_state[key_idx] = (idx - 1) % len(bilder_liste)
@@ -143,8 +137,7 @@ def show_image_carousel(bilder_liste, ad_id):
 
 # Seitenlogik
 if seite == "🔍 Aktive Anzeigen":
-    st.title("🔍 Aktive Kleinanzeigen")
-
+    st.title('<span class="material-icons">search</span> Aktive Kleinanzeigen', unsafe_allow_html=True)
     with st.form("filters"):
         col1, col2 = st.columns(2)
         min_preis = col1.number_input("💶 Mindestpreis", min_value=0, value=0)
@@ -152,12 +145,10 @@ if seite == "🔍 Aktive Anzeigen":
         nur_versand = st.checkbox("📦 Nur mit Versand")
         nur_angebote = st.checkbox("📢 Nur Angebote", value=True)
         submit = st.form_submit_button("🔎 Anzeigen durchsuchen")
-
     if submit:
         st.session_state.log_lines.clear()
         st.session_state.log_buffer.seek(0)
         st.session_state.log_buffer.truncate(0)
-
         with st.spinner("Suche läuft..."):
             neue_anzeigen = scrape_kleinanzeigen(
                 modell,
@@ -173,13 +164,11 @@ if seite == "🔍 Aktive Anzeigen":
                 },
                 log=log
             )
-
         gespeicherte = 0
         for anzeige in neue_anzeigen:
             if not is_advert_archived(anzeige["id"]):
                 save_advert(anzeige)
                 gespeicherte += 1
-
         if gespeicherte:
             st.success(f"{gespeicherte} neue Anzeigen gespeichert.")
         else:
@@ -209,21 +198,19 @@ if seite == "🔍 Aktive Anzeigen":
             st.markdown('<div class="card">', unsafe_allow_html=True)
             col1, col2 = st.columns([1, 4])
             with col1:
-                if bilder:
-                    show_image_carousel(bilder, anzeige["id"])
-                else:
-                    st.text("Keine Bilder verfügbar.")
-                st.markdown(
-                    f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
-                    f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
-                    f"📈 Gewinn: <b>{pot_gewinn:.2f} €</b></p>",
-                    unsafe_allow_html=True
-                )
+                show_image_carousel(bilder, anzeige["id"])
+                st.markdown(f"""
+                    <p style='font-size: small;'>
+                    <span class="material-icons">sell</span> Preis: <b>{anzeige['price']} €</b><br>
+                    <span class="material-icons">price_change</span> Max. EK: <b>{max_ek:.2f} €</b><br>
+                    <span class="material-icons">trending_up</span> Gewinn: <b>{pot_gewinn:.2f} €</b>
+                    </p>
+                """, unsafe_allow_html=True)
             with col2:
                 st.markdown(f"**{anzeige['title']}**")
-                st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
-                st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
-                st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
+                st.markdown(f"[<span class='material-icons'>open_in_new</span> Anzeige öffnen]({anzeige['link']})", unsafe_allow_html=True)
+                st.markdown(f"<span class='material-icons'>build</span> Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}", unsafe_allow_html=True)
+                st.markdown(f"<span class='material-icons'>construction</span> Reparaturkosten: {reparatur_summe} €", unsafe_allow_html=True)
 
                 defekte_select = st.multiselect(
                     "🔧 Defekte wählen:",
@@ -232,25 +219,21 @@ if seite == "🔍 Aktive Anzeigen":
                     key=f"man_defekt_select_{anzeige['id']}"
                 )
 
-                st.markdown('<div class="primary-button">', unsafe_allow_html=True)
                 if st.button("📂 Speichern", key=f"save_{anzeige['id']}"):
                     update_manual_defekt_keys(anzeige["id"], json.dumps(defekte_select))
                     st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
 
-                st.markdown('<div class="archive-button">', unsafe_allow_html=True)
                 if st.button("💃 Archivieren", key=f"archive_{anzeige['id']}"):
                     archive_advert(anzeige["id"], True)
                     st.success("Anzeige archiviert.")
                     st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
 
                 with st.expander("📄 Beschreibung"):
                     st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
 elif seite == "📁 Archivierte Anzeigen":
-    st.title("📁 Archivierte Anzeigen")
+    st.title('<span class="material-icons">archive</span> Archivierte Anzeigen', unsafe_allow_html=True)
 
     archivierte = get_archived_adverts_for_model(modell)
     if not archivierte:
@@ -276,21 +259,19 @@ elif seite == "📁 Archivierte Anzeigen":
             st.markdown('<div class="card">', unsafe_allow_html=True)
             col1, col2 = st.columns([1, 4])
             with col1:
-                if bilder:
-                    show_image_carousel(bilder, "archiv_" + anzeige["id"])
-                else:
-                    st.text("Keine Bilder verfügbar.")
-                st.markdown(
-                    f"<p style='font-size: small;'>💰 Preis: <b>{anzeige['price']} €</b><br>"
-                    f"📉 Max. EK: <b>{max_ek:.2f} €</b><br>"
-                    f"📈 Gewinn: <b>{pot_gewinn:.2f} €</b></p>",
-                    unsafe_allow_html=True
-                )
+                show_image_carousel(bilder, "archiv_" + anzeige["id"])
+                st.markdown(f"""
+                    <p style='font-size: small;'>
+                    <span class="material-icons">sell</span> Preis: <b>{anzeige['price']} €</b><br>
+                    <span class="material-icons">price_change</span> Max. EK: <b>{max_ek:.2f} €</b><br>
+                    <span class="material-icons">trending_up</span> Gewinn: <b>{pot_gewinn:.2f} €</b>
+                    </p>
+                """, unsafe_allow_html=True)
             with col2:
                 st.markdown(f"**{anzeige['title']}**")
-                st.markdown(f"[🔗 Anzeige öffnen]({anzeige['link']})")
-                st.markdown(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
-                st.markdown(f"🧾 Reparaturkosten: {reparatur_summe} €")
+                st.markdown(f"[<span class='material-icons'>open_in_new</span> Anzeige öffnen]({anzeige['link']})", unsafe_allow_html=True)
+                st.markdown(f"<span class='material-icons'>build</span> Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}", unsafe_allow_html=True)
+                st.markdown(f"<span class='material-icons'>construction</span> Reparaturkosten: {reparatur_summe} €", unsafe_allow_html=True)
                 with st.expander("📄 Beschreibung"):
                     st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
