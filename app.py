@@ -7,7 +7,10 @@ import requests
 from PIL import Image
 from io import BytesIO, StringIO
 
-# Farben
+# Page config muss als erstes
+st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
+
+# Farben definieren
 PRIMARY_COLOR = "#4B6FFF"  # Indigo
 SECONDARY_COLOR = "#00D1B2"  # Türkis
 SIDEBAR_COLOR = "#3A3F80"  # Dunkleres Indigo
@@ -15,7 +18,7 @@ TEXT_COLOR = "#FFFFFF"
 INPUT_TEXT_COLOR = "#E0E0E0"
 HEADER_COLOR = "#1A1D40"
 
-# Grundlegende Styles
+# CSS Styling anwenden
 st.markdown(f"""
     <style>
     .stApp {{
@@ -41,15 +44,13 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-st.set_page_config(page_title="📱 Kleinanzeigen Scout", layout="wide")
-
-# Initialisieren
+# Init DB
 db.init_db()
 
 # Navigation
 seite = st.sidebar.radio("📂 Seiten", ["🔍 Aktive Anzeigen", "📁 Archivierte Anzeigen"])
 
-# Modell-Auswahl
+# iPhone Modell Auswahl
 IPHONE_MODELLE = [
     "iPhone X", "iPhone XR", "iPhone XS", "iPhone XS Max",
     "iPhone 11", "iPhone 11 Pro", "iPhone 11 Pro Max",
@@ -61,13 +62,15 @@ IPHONE_MODELLE = [
 
 if "modell" not in st.session_state:
     st.session_state.modell = "iPhone 14 Pro"
+
 modell = st.sidebar.selectbox("Modell auswählen", IPHONE_MODELLE, index=IPHONE_MODELLE.index(st.session_state.modell))
 st.session_state.modell = modell
 
+# Konfiguration laden
 config = db.load_config(modell) or {
-    "verkaufspreis": 800,
-    "wunsch_marge": 100,
-    "reparaturkosten": {"display": 200, "akku": 80, "kamera": 150}
+    "verkaufspreis": 1000,
+    "wunsch_marge": 200,
+    "reparaturkosten": {"display": 150, "akku": 80, "kamera": 100}
 }
 
 verkaufspreis = st.sidebar.number_input("📈 Verkaufspreis (€)", min_value=0, value=config["verkaufspreis"], step=10)
@@ -82,19 +85,7 @@ if st.sidebar.button("📂 Konfiguration speichern"):
     db.save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict)
     st.sidebar.success("✅ Konfiguration gespeichert")
 
-# Log Setup
-if 'log_buffer' not in st.session_state:
-    st.session_state.log_buffer = StringIO()
-    st.session_state.log_lines = []
-
-log_area = st.empty()
-
-def log(message):
-    print(message, file=sys.stderr)
-    st.session_state.log_buffer.write(message + "\n")
-    st.session_state.log_lines.append(message)
-    log_area.text_area("🛠 Debug-Ausgaben", value="\n".join(st.session_state.log_lines[-50:]), height=300)
-
+# Bildanzeige Funktion
 def show_image_carousel(bilder_liste, ad_id, created_at, updated_at):
     if not bilder_liste:
         st.write("Keine Bilder verfügbar.")
@@ -105,14 +96,10 @@ def show_image_carousel(bilder_liste, ad_id, created_at, updated_at):
         st.session_state[key_idx] = 0
     idx = st.session_state[key_idx]
 
-    st.write(f"Erfasst am: {created_at} | Letzte Änderung: {updated_at}")
+    st.markdown(f"**Erfasst am:** {created_at} | **Letzte Änderung:** {updated_at}")
 
-    col1, col2, col3 = st.columns([1, 4, 1])
-
-    with col1:
-        if st.button("←", key=f"prev_{ad_id}"):
-            st.session_state[key_idx] = (idx - 1) % len(bilder_liste)
-    with col2:
+    col_img, col_left, col_right = st.columns([6, 1, 1])
+    with col_img:
         img_url = bilder_liste[idx]
         try:
             response = requests.get(img_url, timeout=5)
@@ -120,7 +107,11 @@ def show_image_carousel(bilder_liste, ad_id, created_at, updated_at):
             st.image(img, width=300)
         except Exception as e:
             st.warning(f"Bild konnte nicht geladen werden: {str(e)}")
-    with col3:
+
+    with col_left:
+        if st.button("←", key=f"prev_{ad_id}"):
+            st.session_state[key_idx] = (idx - 1) % len(bilder_liste)
+    with col_right:
         if st.button("→", key=f"next_{ad_id}"):
             st.session_state[key_idx] = (idx + 1) % len(bilder_liste)
 
@@ -128,7 +119,7 @@ def show_image_carousel(bilder_liste, ad_id, created_at, updated_at):
 
 # Seitenlogik
 if seite == "🔍 Aktive Anzeigen":
-    st.header("🔍 Aktive Kleinanzeigen", divider="grey")
+    st.header("🔍 Aktive Kleinanzeigen")
 
     with st.form("filters"):
         col1, col2 = st.columns(2)
@@ -136,71 +127,38 @@ if seite == "🔍 Aktive Anzeigen":
         max_preis = col2.number_input("💶 Maximalpreis", min_value=0, value=1500)
         nur_versand = st.checkbox("📦 Nur mit Versand", value=False)
         nur_angebote = st.checkbox("📢 Nur Angebote", value=True)
-        submit = st.form_submit_button("Anzeigen durchsuchen")
+        submit = st.form_submit_button("🔎 Anzeigen durchsuchen")
 
     if submit:
-        st.session_state.log_lines.clear()
-        st.session_state.log_buffer.seek(0)
-        st.session_state.log_buffer.truncate(0)
+        st.write("👉 Hier würde der Scraper starten (nicht aktiviert in dieser Version).")
 
-        with st.spinner("Suche läuft..."):
-            neue_anzeigen = scraper.scrape_kleinanzeigen(
-                modell,
-                min_price=min_preis,
-                max_price=max_preis,
-                nur_versand=nur_versand,
-                nur_angebote=nur_angebote,
-                debug=True,
-                config={
-                    "verkaufspreis": verkaufspreis,
-                    "wunsch_marge": wunsch_marge,
-                    "reparaturkosten": reparaturkosten_dict,
-                },
-                log=log
-            )
-
-        gespeicherte = 0
-        for anzeige in neue_anzeigen:
-            if not db.is_advert_archived(anzeige["id"]):
-                db.save_advert(anzeige)
-                gespeicherte += 1
-
-        if gespeicherte:
-            st.success(f"{gespeicherte} neue Anzeigen gespeichert.")
-        else:
-            st.warning("Keine neuen, relevanten Anzeigen gefunden.")
-
-    alle_anzeigen = [a for a in db.get_all_adverts_for_model(modell) if not db.is_advert_archived(a["id"])]
+    alle_anzeigen = db.get_all_adverts_for_model(modell)
     if not alle_anzeigen:
         st.info("ℹ️ Keine gespeicherten Anzeigen verfügbar.")
 
     for anzeige in alle_anzeigen:
         bilder = anzeige.get("bilder_liste", [])
-        if isinstance(bilder, str):
-            bilder = json.loads(bilder or "[]")
         if not bilder and anzeige.get("image"):
             bilder = [anzeige.get("image")]
 
-        man_defekt_keys = anzeige.get("man_defekt_keys") or []
+        man_defekt_keys = anzeige.get("man_defekt_keys", [])
         reparatur_summe = sum(reparaturkosten_dict.get(key, 0) for key in man_defekt_keys)
         max_ek = verkaufspreis - wunsch_marge - reparatur_summe
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
 
-        st.markdown(f"### [{anzeige['title']}]({anzeige['link']})")
+        st.subheader(f"[{anzeige['title']}]({anzeige['link']})")
 
-        show_image_carousel(bilder, anzeige["id"], anzeige.get("created_at", "n/a"), anzeige.get("updated_at", "n/a"))
+        show_image_carousel(bilder, anzeige["id"], anzeige.get("created_at", "-"), anzeige.get("updated_at", "-"))
 
-        st.write(f"💰 Preis: {anzeige['price']} €")
-        st.write(f"📉 Max. EK: {max_ek:.2f} €")
-        st.write(f"📈 Gewinn: {pot_gewinn:.2f} €")
+        st.write(f"💰 Preis: **{anzeige['price']} €**")
+        st.write(f"📉 Max. EK: **{max_ek:.2f} €**")
+        st.write(f"📈 Gewinn: **{pot_gewinn:.2f} €**")
         st.write(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
         st.write(f"🧾 Reparaturkosten: {reparatur_summe} €")
 
         defekte_select = st.multiselect(
-            "🔧 Defekte wählen:",
-            options=list(reparaturkosten_dict.keys()),
-            default=man_defekt_keys,
-            key=f"man_defekt_select_{anzeige['id']}"
+            "🔧 Defekte wählen:", options=list(reparaturkosten_dict.keys()),
+            default=man_defekt_keys, key=f"defekte_{anzeige['id']}"
         )
 
         if st.button("Speichern", key=f"save_{anzeige['id']}"):
@@ -216,31 +174,29 @@ if seite == "🔍 Aktive Anzeigen":
             st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
 
 elif seite == "📁 Archivierte Anzeigen":
-    st.header("📁 Archivierte Anzeigen", divider="grey")
+    st.header("📁 Archivierte Anzeigen")
+
     archivierte = db.get_archived_adverts_for_model(modell)
     if not archivierte:
         st.info("ℹ️ Keine archivierten Anzeigen.")
 
     for anzeige in archivierte:
         bilder = anzeige.get("bilder_liste", [])
-        if isinstance(bilder, str):
-            bilder = json.loads(bilder or "[]")
         if not bilder and anzeige.get("image"):
             bilder = [anzeige.get("image")]
 
-        man_defekt_keys = anzeige.get("man_defekt_keys") or []
+        man_defekt_keys = anzeige.get("man_defekt_keys", [])
         reparatur_summe = sum(reparaturkosten_dict.get(key, 0) for key in man_defekt_keys)
         max_ek = verkaufspreis - wunsch_marge - reparatur_summe
         pot_gewinn = verkaufspreis - reparatur_summe - anzeige.get("price", 0)
 
-        st.markdown(f"### [{anzeige['title']}]({anzeige['link']})")
-
-        show_image_carousel(bilder, "archiv_" + anzeige["id"], anzeige.get("created_at", "n/a"), anzeige.get("updated_at", "n/a"))
-
-        st.write(f"💰 Preis: {anzeige['price']} €")
-        st.write(f"📉 Max. EK: {max_ek:.2f} €")
-        st.write(f"📈 Gewinn: {pot_gewinn:.2f} €")
+        st.subheader(f"[{anzeige['title']}]({anzeige['link']})")
+        show_image_carousel(bilder, "archiv_" + anzeige["id"], anzeige.get("created_at", "-"), anzeige.get("updated_at", "-"))
+        st.write(f"💰 Preis: **{anzeige['price']} €**")
+        st.write(f"📉 Max. EK: **{max_ek:.2f} €**")
+        st.write(f"📈 Gewinn: **{pot_gewinn:.2f} €**")
         st.write(f"🔧 Defekte: {', '.join(man_defekt_keys) if man_defekt_keys else 'Keine'}")
         st.write(f"🧾 Reparaturkosten: {reparatur_summe} €")
+
         with st.expander("📄 Beschreibung"):
             st.markdown(anzeige["beschreibung"], unsafe_allow_html=True)
