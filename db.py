@@ -24,7 +24,7 @@ def init_db():
     )
     """)
 
-    # Bestehende Spalten ergänzen (Migration)
+    # Migration für bestehende Tabellen
     try:
         cursor.execute("ALTER TABLE adverts ADD COLUMN created_at TEXT")
     except sqlite3.OperationalError:
@@ -53,12 +53,10 @@ def save_advert(advert):
 
     now = datetime.datetime.now().strftime("%Y-%m-%d")
 
-    # Prüfen ob die Anzeige schon existiert
     cursor.execute("SELECT id, created_at FROM adverts WHERE id = ?", (advert["id"],))
     row = cursor.fetchone()
 
     if row:
-        # Update bestehenden Eintrag
         created_at_existing = row[1] or now
         cursor.execute("""
             UPDATE adverts SET
@@ -83,7 +81,6 @@ def save_advert(advert):
             advert["id"]
         ))
     else:
-        # Neuer Eintrag
         cursor.execute("""
             INSERT INTO adverts (
                 id, modell, title, beschreibung, price, link, image,
@@ -196,9 +193,12 @@ def save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten):
     conn.commit()
     conn.close()
 
-def update_manual_defekt_keys(ad_id, man_defekt_keys_json):
+def update_manual_defekt_keys(ad_id, man_defekt_keys):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("UPDATE adverts SET man_defekt_keys = ? WHERE id = ?", (man_defekt_keys_json, ad_id))
+    cursor.execute(
+        "UPDATE adverts SET man_defekt_keys = ? WHERE id = ?",
+        (json.dumps(man_defekt_keys), ad_id)
+    )
     conn.commit()
     conn.close()
