@@ -7,6 +7,7 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
+    # Tabelle für Anzeigen
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS adverts (
         id TEXT PRIMARY KEY,
@@ -24,17 +25,7 @@ def init_db():
     )
     """)
 
-    # Migration für bestehende Tabellen
-    try:
-        cursor.execute("ALTER TABLE adverts ADD COLUMN created_at TEXT")
-    except sqlite3.OperationalError:
-        pass
-
-    try:
-        cursor.execute("ALTER TABLE adverts ADD COLUMN updated_at TEXT")
-    except sqlite3.OperationalError:
-        pass
-
+    # Tabelle für Konfiguration
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS config (
         modell TEXT PRIMARY KEY,
@@ -47,17 +38,21 @@ def init_db():
     conn.commit()
     conn.close()
 
+def advert_exists(ad_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM adverts WHERE id = ?", (ad_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result is not None
+
 def save_advert(advert):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     now = datetime.datetime.now().strftime("%Y-%m-%d")
 
-    cursor.execute("SELECT id, created_at FROM adverts WHERE id = ?", (advert["id"],))
-    row = cursor.fetchone()
-
-    if row:
-        created_at_existing = row[1] or now
+    if advert_exists(advert["id"]):
         cursor.execute("""
             UPDATE adverts SET
                 modell = ?,
@@ -67,6 +62,7 @@ def save_advert(advert):
                 link = ?,
                 image = ?,
                 bilder_liste = ?,
+                man_defekt_keys = ?,
                 updated_at = ?
             WHERE id = ?
         """, (
@@ -77,6 +73,7 @@ def save_advert(advert):
             advert.get("link"),
             advert.get("image"),
             json.dumps(advert.get("bilder_liste", [])),
+            json.dumps(advert.get("man_defekt_keys", [])),
             now,
             advert["id"]
         ))
@@ -120,33 +117,10 @@ def get_all_adverts_for_model(modell, include_archived=False):
     result = []
     for row in rows:
         row_dict = dict(row)
-
-        bilder_raw = row_dict.get("bilder_liste") or "[]"
-        row_dict["bilder_liste"] = json.loads(bilder_raw)
-
-        man_defekt_raw = row_dict.get("man_defekt_keys") or "[]"
-        row_dict["man_defekt_keys"] = json.loads(man_defekt_raw)
-
+        row_dict["bilder_liste"] = json.loads(row_dict.get("bilder_liste") or "[]")
+        row_dict["man_defekt_keys"] = json.loads(row_dict.get("man_defekt_keys") or "[]")
         result.append(row_dict)
     return result
-
-def get_all_ad_ids_for_model(modell, include_archived=False):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    query = "SELECT id FROM adverts WHERE modell = ?"
-    params = [modell]
-    if not include_archived:
-        query += " AND archived = 0"
-
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-    conn.close()
-
-    return [row[0] for row in rows]
-
-def get_archived_adverts_for_model(modell):
-    return get_all_adverts_for_model(modell, include_archived=True)
 
 def is_advert_archived(ad_id):
     conn = sqlite3.connect(DB_PATH)
@@ -165,6 +139,16 @@ def archive_advert(ad_id, archive=True):
     conn.commit()
     conn.close()
 
+def update_manual_defekt_keys(ad_id, man_defekt_keys):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE adverts SET man_defekt_keys = ? WHERE id = ?",
+        (json.dumps(man_defekt_keys), ad_id)
+    )
+    conn.commit()
+    conn.close()
+
 def load_config(modell):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -172,10 +156,7 @@ def load_config(modell):
     row = cursor.fetchone()
     conn.close()
     if row:
-        try:
-            reparaturkosten = json.loads(row[2]) if row[2] else {}
-        except Exception:
-            reparaturkosten = {}
+        reparaturkosten = json.loads(row[2]) if row[2] else {}
         return {
             "verkaufspreis": row[0],
             "wunsch_marge": row[1],
@@ -190,15 +171,5 @@ def save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten):
         INSERT OR REPLACE INTO config (modell, verkaufspreis, wunsch_marge, reparaturkosten)
         VALUES (?, ?, ?, ?)
     """, (modell, verkaufspreis, wunsch_marge, json.dumps(reparaturkosten)))
-    conn.commit()
-    conn.close()
-
-def update_manual_defekt_keys(ad_id, man_defekt_keys):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE adverts SET man_defekt_keys = ? WHERE id = ?",
-        (json.dumps(man_defekt_keys), ad_id)
-    )
     conn.commit()
     conn.close()
