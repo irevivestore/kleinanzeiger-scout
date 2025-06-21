@@ -1,6 +1,7 @@
 # config.py
 
 import sqlite3  # <- wichtig für save_config / load_config
+import json     # <- neu für saubere Speicherung der Dictionarys
 
 # Standard-Werte, wenn keine Konfiguration für das Modell gespeichert ist
 REPARATURKOSTEN_DEFAULT = {
@@ -19,14 +20,15 @@ REPARATURKOSTEN_DEFAULT = {
 VERKAUFSPREIS_DEFAULT = 500  # Standard-Wert für Verkaufspreis
 WUNSCH_MARGE_DEFAULT = 120   # Standard-Wert für Marge in €
 
-DB_PATH = "config.db"
+# WICHTIG: hier den Pfad auf das gemountete Volume anpassen:
+DB_PATH = "/data/config.db"
 
 def save_config(modell, verkaufspreis, wunsch_marge, reparaturkosten_dict):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # Dictionary als String speichern
-    rep_string = repr(reparaturkosten_dict)
+    # Dictionary sauber als JSON speichern
+    rep_string = json.dumps(reparaturkosten_dict)
 
     c.execute('''
         INSERT OR REPLACE INTO konfigurationen (modell, verkaufspreis, wunsch_marge, reparaturkosten)
@@ -47,7 +49,7 @@ def load_config(modell):
     if row:
         verkaufspreis, wunsch_marge, rep_string = row
         try:
-            reparaturkosten = eval(rep_string)
+            reparaturkosten = json.loads(rep_string)
         except:
             reparaturkosten = {}
         return {
