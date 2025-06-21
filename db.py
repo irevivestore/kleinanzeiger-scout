@@ -165,6 +165,10 @@ def archive_advert(ad_id, archive=True):
     conn.commit()
     conn.close()
 
+# --------------------------------------------------------
+# WICHTIGER PART: Hier harmonisieren wir die config-Logik
+# --------------------------------------------------------
+
 def load_config(modell):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
